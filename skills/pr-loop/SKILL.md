@@ -100,7 +100,7 @@ Apply the `needs-human` label, post a summary comment, return failure. Caller cl
 
 ## Subagent
 
-`agents/claude-code/pr-fixer.md` and `agents/opencode/pr-fixer.md` — same role, two CLI-specific frontmatter variants. Registered as `pr-loop-pr-fixer` after `scripts/install-agents.sh` runs. Keep both bodies in sync.
+`agents/claude-code/pr-fixer.md` and `agents/opencode/pr-fixer.md` — same role, two CLI-specific frontmatter variants. Registered as `pr-loop-pr-fixer` after the post-install bootstrap (`~/.agents/skills/start-feature/scripts/install-agents.sh`) runs. Keep both bodies in sync.
 
 ## State / cache layout
 

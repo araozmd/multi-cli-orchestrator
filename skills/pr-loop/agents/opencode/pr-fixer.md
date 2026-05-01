@@ -49,4 +49,4 @@ Fix exactly one Codex review comment. **One commit, one fix, one return** — no
 - Touching files unrelated to the comment
 - Running the full test suite or invoking other workers
 
-The OpenCode subagent name is the **filename** after the bootstrap symlink runs (e.g. `pr-loop-pr-fixer`). See `scripts/install-agents.sh`.
+The OpenCode subagent name is the **filename** after the bootstrap symlink runs (e.g. `pr-loop-pr-fixer`). See `~/.agents/skills/start-feature/scripts/install-agents.sh`.

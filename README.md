@@ -58,11 +58,13 @@ The `npx skills` CLI installs each skill folder as-is, but it does **not** reloc
 
 ```bash
 # After `npx skills add ... -g`
-./scripts/install-agents.sh --global
+bash ~/.agents/skills/start-feature/scripts/install-agents.sh --global
 
 # Or, for a project-scoped install
-./scripts/install-agents.sh --project
+bash ~/.agents/skills/start-feature/scripts/install-agents.sh --project
 ```
+
+The bootstrap script ships inside the `start-feature` skill (under `skills/start-feature/scripts/`) so it gets copied to disk by `npx skills` itself — top-level sibling files would not. Same goes for the worker harness (`invoke-worker.sh`).
 
 What the script does:
 
@@ -138,7 +140,7 @@ The two CLIs need different frontmatter (Claude Code uses `name:` as the agent i
 
 ### Worker invocation seam
 
-All worker calls go through [`scripts/invoke-worker.sh`](scripts/invoke-worker.sh). Today it shells out. Future: drop-in for an A2A client wrapper. Keep the signature stable.
+All worker calls go through [`skills/start-feature/scripts/invoke-worker.sh`](skills/start-feature/scripts/invoke-worker.sh). Today it shells out to `claude` / `opencode` / `gemini` with the right headless-approval flags. Future: drop-in for an A2A client wrapper. Keep the signature stable. After `npx skills update` it lives at `~/.agents/skills/start-feature/scripts/invoke-worker.sh`; the orchestrator skills resolve it via `${MCO_SKILL_ROOT:-$HOME/.agents/skills/start-feature}/scripts/invoke-worker.sh`.
 
 ## How to use it
 

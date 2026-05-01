@@ -80,7 +80,7 @@ Invoke the `route-task` skill with:
 - The PR number
 - The round number (`0` for initial implementation)
 
-`route-task` will pick the worker, write the worker prompt, call `scripts/invoke-worker.sh`, capture commits, push.
+`route-task` will pick the worker, write the worker prompt, call `~/.agents/skills/start-feature/scripts/invoke-worker.sh` (the orchestrator's single-chokepoint harness), capture commits, push.
 
 ### Step 6 — Hand off to `pr-loop`
 

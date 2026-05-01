@@ -47,4 +47,4 @@ prompt: <the original task verbatim>
 
 — rather than guessing.
 
-The OpenCode subagent name is the **filename** after the bootstrap symlink runs (e.g. `route-task-routing-judge`). See `scripts/install-agents.sh`.
+The OpenCode subagent name is the **filename** after the bootstrap symlink runs (e.g. `route-task-routing-judge`). See `~/.agents/skills/start-feature/scripts/install-agents.sh`.

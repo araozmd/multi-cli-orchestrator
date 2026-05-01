@@ -10,14 +10,16 @@
 # (`<skill>-<agent>.md`) to avoid collisions across skills.
 #
 # Run once after `npx skills add ...` and again after any update that adds new
-# subagents. Idempotent.
+# subagents. Idempotent. After `npx skills update`, this script is at:
+#   ~/.agents/skills/start-feature/scripts/install-agents.sh
 #
-# Usage:
-#   scripts/install-agents.sh                # link both global + project scopes
-#   scripts/install-agents.sh --global       # global only
-#   scripts/install-agents.sh --project      # project only
-#   scripts/install-agents.sh --unlink       # remove links pointing at our skills
-#   scripts/install-agents.sh --dry-run      # print what would happen, change nothing
+# Usage (use the install path above; `BOOT` aliases it for the examples):
+#   BOOT=~/.agents/skills/start-feature/scripts/install-agents.sh
+#   bash "$BOOT"               # link both global + project scopes
+#   bash "$BOOT" --global      # global only
+#   bash "$BOOT" --project     # project only
+#   bash "$BOOT" --unlink      # remove links pointing at our skills
+#   bash "$BOOT" --dry-run     # print what would happen, change nothing
 #
 # Discovers any skill (not just the ones in this repo) that follows the
 # `agents/<cli>/<agent>.md` convention.

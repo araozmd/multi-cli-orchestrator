@@ -1,6 +1,6 @@
 ---
 name: route-task
-description: Decide which CLI worker (Claude, OpenCode, or Gemini) should implement a given task. Routes by task type — large-context to Gemini, mechanical to OpenCode, judgment to Claude. Returns the chosen worker and a short rationale; the caller invokes the worker via scripts/invoke-worker.sh.
+description: Decide which CLI worker (Claude, OpenCode, or Gemini) should implement a given task. Routes by task type — large-context to Gemini, mechanical to OpenCode, judgment to Claude. Returns the chosen worker and a short rationale; the caller invokes the worker via the orchestrator's invoke-worker.sh chokepoint.
 ---
 
 # route-task
@@ -57,7 +57,10 @@ printf '%s' "$prompt" > "$round_dir/prompt.md"
 ### Step 3 — Invoke the worker
 
 ```bash
-bash scripts/invoke-worker.sh "$worker" "$round_dir/prompt.md" "$round_dir"
+# invoke-worker.sh ships inside the start-feature skill; resolve via the
+# canonical install path (override with MCO_SKILL_ROOT for tests).
+INVOKE="${MCO_SKILL_ROOT:-$HOME/.agents/skills/start-feature}/scripts/invoke-worker.sh"
+bash "$INVOKE" "$worker" "$round_dir/prompt.md" "$round_dir"
 ```
 
 Exit code handling:
@@ -82,4 +85,4 @@ Return the `{worker, rationale}` pair so the caller (e.g. `pr-loop`) can log it 
 
 ## Subagent
 
-`agents/claude-code/routing-judge.md` and `agents/opencode/routing-judge.md` — same role, two CLI-specific frontmatter variants. Registered as `route-task-routing-judge` after `scripts/install-agents.sh` runs. Keep both bodies in sync.
+`agents/claude-code/routing-judge.md` and `agents/opencode/routing-judge.md` — same role, two CLI-specific frontmatter variants. Registered as `route-task-routing-judge` after the post-install bootstrap (`~/.agents/skills/start-feature/scripts/install-agents.sh`) runs. Keep both bodies in sync.
