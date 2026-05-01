@@ -30,10 +30,12 @@ fi
 
 PROMPT="$(cat "$PROMPT_FILE")"
 
+# Headless worker mode: each CLI needs an explicit "auto-approve edits" flag,
+# otherwise it will hang waiting for an interactive permission prompt.
 case "$WORKER" in
-  claude)   CMD=(npx -y @anthropic-ai/claude-code -p "$PROMPT") ;;
-  opencode) CMD=(opencode run "$PROMPT") ;;
-  gemini)   CMD=(gemini -p "$PROMPT") ;;
+  claude)   CMD=(npx -y @anthropic-ai/claude-code --permission-mode acceptEdits -p "$PROMPT") ;;
+  opencode) CMD=(opencode --pure run --dangerously-skip-permissions "$PROMPT") ;;
+  gemini)   CMD=(gemini --approval-mode auto_edit -p "$PROMPT") ;;
   *)        echo "error: unknown worker: $WORKER" >&2; exit 2 ;;
 esac
 
