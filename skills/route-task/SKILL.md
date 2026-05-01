@@ -52,6 +52,12 @@ mkdir -p "$round_dir"
 echo "$worker" > "$round_dir/worker"
 echo "$rationale" > "$round_dir/rationale"
 printf '%s' "$prompt" > "$round_dir/prompt.md"
+# role: implementation | fix | escalation — used by pr-loop's handover summary
+if [[ "$round" == "0" ]]; then
+  echo "implementation" > "$round_dir/role"
+else
+  echo "escalation" > "$round_dir/role"
+fi
 ```
 
 ### Step 3 — Invoke the worker

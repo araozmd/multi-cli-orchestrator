@@ -59,6 +59,17 @@ Compare `blocking.json` to round `n-1`'s `blocking.json` by comment ID (or, if I
 | 3 | Build a single combined fix prompt (all blocking comments concatenated) and hand off to `route-task` with `round=3` and `exclude=<workers used in rounds 1–2>`. `route-task` picks a different worker, invokes it, pushes. |
 | 4+ | Stop the loop. `gh pr edit "$pr_number" --add-label needs-human`. Post a summary comment listing all rounds, the blocking comments that survived, and the cache path. Return failure. |
 
+**Always write the worker file for this round** (so the handover summary is reconstructible from cache):
+
+```bash
+# rounds 1–2: pr-fixer subagents run in the orchestrator's Claude session
+# round 3: route-task already wrote it; this is a no-op overwrite
+echo "<worker>" > "$round_dir/worker"
+echo "<role>" > "$round_dir/role"  # implementation | fix | escalation
+```
+
+Use `claude` for rounds 1–2 (pr-fixer is a Claude subagent). Use whatever `route-task` returned for round 3.
+
 If the **token / cost cap** (`MCO_TOKEN_BUDGET_USD`) is exceeded at any round, treat it identically to round 4 (label, comment, stop).
 
 ### 6. Re-check gates
@@ -75,6 +86,26 @@ If all are green: **proceed to "ready to merge"** (don't waste another Codex rou
 
 If checks are still pending, wait for them; if any fail, treat the failure like a blocking comment for the next round.
 
+## Handover summary
+
+Before posting either terminal-state comment, build the handover summary by walking the cache:
+
+```bash
+# Per-round breakdown
+for d in .mco-cache/<pr>/round-*/; do
+  n=$(basename "$d" | sed 's/round-//')
+  worker=$(cat "$d/worker" 2>/dev/null || echo "?")
+  role=$(cat "$d/role" 2>/dev/null || echo "?")
+  echo "- round-$n: $worker ($role)"
+done
+
+# Totals per worker
+for d in .mco-cache/<pr>/round-*/; do cat "$d/worker" 2>/dev/null; done \
+  | sort | uniq -c
+```
+
+Save the rendered summary to `.mco-cache/<pr>/handover-summary.md` so `start-feature` can read it after `pr-loop` returns.
+
 ## Terminal states
 
 ### Ready to merge (success)
@@ -84,8 +115,13 @@ Post a summary comment on the PR:
 ```
 multi-cli-orchestrator: all gates green ✅
 
+Handover summary:
 - Rounds run: <n>
-- Workers used: <list>
+- Worker totals: claude=<a>, opencode=<b>, gemini=<c>
+- Round-by-round:
+  • round-0: <worker> (implementation)
+  • round-1: claude (fix x<count>)
+  • ...
 - Blocking comments resolved: <count>
 - Cache: .mco-cache/<pr>/
 
@@ -96,7 +132,7 @@ Return success to the caller (`start-feature`). The caller is responsible for cl
 
 ### Needs-human (failure)
 
-Apply the `needs-human` label, post a summary comment, return failure. Caller clears the lock.
+Apply the `needs-human` label, post a summary comment using the same handover-summary block (so the human can see exactly which workers tried and where they got stuck), return failure. Caller clears the lock.
 
 ## Subagent
 

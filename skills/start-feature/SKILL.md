@@ -88,6 +88,10 @@ Invoke the `pr-loop` skill with the PR number. It drives the Codex review cycle 
 - All gates green → posts "ready to merge" comment, returns success → **clear `.mco-cache/_lock`**, tell the user to merge.
 - `needs-human` label applied → returns failure → leave the lock in place, tell the user what intervened.
 
+### Step 7 — Surface the handover summary
+
+`pr-loop` writes `.mco-cache/<pr>/handover-summary.md`. After it returns (either outcome), read that file and show it to the user as part of the final message — they want to know which workers ran, in which rounds, with what role (implementation / fix / escalation). Do not summarize it differently from what `pr-loop` already wrote; just include it verbatim under a "Multi-CLI handover summary" heading, then add the merge instruction (Phase 1: "ready to merge — click Merge in GitHub") or the needs-human pointer.
+
 ## Lock cleanup contract
 
 `start-feature` is responsible for removing `.mco-cache/_lock` on every terminal outcome (success, `needs-human`, user abort). If `pr-loop` returns either way, clear the lock before returning control to the user.
