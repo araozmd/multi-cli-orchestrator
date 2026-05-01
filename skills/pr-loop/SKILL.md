@@ -12,7 +12,7 @@ Drives the Codex review cycle on an open PR until either all gates are green or 
 ## Inputs
 
 - `pr_number` — the open draft PR
-- (Implicit) `MCO_MAX_ROUNDS` (default 4), `MCO_TOKEN_BUDGET_USD`, `MCO_BLOCKING_SEVERITIES` (default `P0,P1`), `MCO_DRY_RUN`
+- (Implicit) `MCO_MAX_ROUNDS` (default 4), `MCO_TOKEN_BUDGET_USD`, `MCO_BLOCKING_SEVERITIES` (default `P0,P1`), `MCO_DRY_RUN`, `MCO_MERGE_STRATEGY` (default `merge`)
 
 ## Per-round runbook
 
@@ -84,6 +84,16 @@ After fix commits land, re-fetch the PR JSON and check the gates **before** trig
 
 If all are green: **proceed to "ready to merge"** (don't waste another Codex round).
 
+#### Squash-Merge Prep (if `MCO_MERGE_STRATEGY=squash`)
+
+If squashing is enabled, invoke `@codex review` one last time with a specific instruction to **summarize the development journey** for a commit message.
+
+```bash
+gh pr comment "$pr_number" --body "@codex summarize: generate a high-signal squash commit message. Include the core implementation goal, which workers (Claude, OpenCode, Gemini) were used for which rounds, and a list of key P0/P1 fixes resolved. Output raw text only."
+```
+
+Poll for this summary (wait for a comment from `@codex` containing the summary), then save it to `.mco-cache/<pr>/squash-message.txt`.
+
 If checks are still pending, wait for them; if any fail, treat the failure like a blocking comment for the next round.
 
 ## Handover summary
@@ -125,8 +135,12 @@ Handover summary:
 - Blocking comments resolved: <count>
 - Cache: .mco-cache/<pr>/
 
-Phase 1 mode: human merges. Click "Merge pull request" to land.
+Merge Logic:
+- If MCO_MERGE_STRATEGY=merge: "Phase 1 mode: human merges. Click 'Merge pull request' to land."
+- If MCO_MERGE_STRATEGY=squash: "Phase 1 mode: human merges. **Instruction:** Use 'Squash and merge' with the message generated below." (Append the content of squash-message.txt).
 ```
+
+> **Phase 2 (future):** The orchestrator will run `gh pr merge --squash --body-file .mco-cache/<pr>/squash-message.txt` automatically.
 
 Return success to the caller (`start-feature`). The caller is responsible for clearing `.mco-cache/_lock`.
 

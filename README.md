@@ -10,15 +10,15 @@
 Claude is excellent at architecture and judgment. It is also expensive to run as a generalist on every refactor, doc pass, and repo-wide read. This kit splits the work:
 
 - **Claude Code** stays the orchestrator and judgment worker.
+- **OpenCode** handles mechanical implementation (default for technical work: refactors, test scaffolding, parallel chunks, feature code).
 - **Gemini CLI** absorbs large-context tasks (full-repo reads, summaries, second-opinion reviews).
-- **OpenCode** handles mechanical implementation (refactors, test scaffolding, parallel chunks).
 - **Codex CLI** is the guardian — it reviews the PR before merge.
 
 The result: token pressure on Claude drops, PRs get a second pair of eyes for free, and the merge gate stays strict.
 
 ## Status
 
-`v0.1.0` — scaffold. The skills, subagents, and helper scripts are placeholders that point to [`docs/specs/2026-04-30-multi-cli-orchestrator-design.md`](docs/specs/2026-04-30-multi-cli-orchestrator-design.md). Implementation lands in Phase 1.
+`v0.1.5` — Phase 1 functional. Core skills and subagents implemented. Human-button merge by default; squash-merge supported with Codex journey summaries.
 
 ## Prerequisites
 
@@ -87,6 +87,7 @@ export MCO_MAX_ROUNDS=4                     # default 4
 export MCO_TOKEN_BUDGET_USD=5.00            # abort + notify if exceeded
 export MCO_BLOCKING_SEVERITIES="P0,P1"      # default P0,P1
 export MCO_LOW_BUDGET=1                     # aggressively route to cheap workers (Kimi, Gemini)
+export MCO_MERGE_STRATEGY="merge"           # or "squash" for Codex-generated commit summaries
 ```
 
 Make sure your project's `main` has branch protection enabled with required status checks (CI, tests, typecheck, lint). The auto-merge gate relies on it.

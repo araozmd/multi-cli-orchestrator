@@ -9,7 +9,7 @@ The orchestrator operates as a pipeline across three main skills:
 1.  **`start-feature`**: The entry point. It brainstorms a spec with the user, generates a test plan (Codex checklist), and opens a draft PR.
 2.  **`route-task`**: Decides which CLI worker should handle a task based on its type:
     *   **Gemini CLI**: Large-context (full-repo reads, summaries, doc generation).
-    *   **OpenCode**: Mechanical implementation (refactors, scaffolding, parallel tasks). Uses `openai/gpt-5.3-codex` by default.
+    *   **OpenCode**: Mechanical implementation (default for technical work: refactors, scaffolding, parallel tasks). Uses `openai/gpt-5.3-codex` by default.
     *   **Smart Worker**: High-capability open-source models (Kimi k2, DeepSeek v3.1) via OpenRouter.
     *   **Claude Code (self)**: Judgment, architecture, and post-review fixes.
 3.  **`pr-loop`**: Drives an autonomous Codex PR review cycle. It classifies comments by severity (P0/P1 block; P2/nits ignore), applies fixes, and escalates to different workers if needed (Round 3).
@@ -53,6 +53,7 @@ The following environment variables control orchestrator behavior:
 | `MCO_MAX_ROUNDS` | `4` | Maximum iterations of the `pr-loop`. |
 | `MCO_TOKEN_BUDGET_USD` | (Optional) | Hard abort if the total token spend exceeds this USD value. |
 | `MCO_BLOCKING_SEVERITIES` | `P0,P1` | Comma-separated list of Codex tags that gate the merge. |
+| `MCO_MERGE_STRATEGY` | `merge` | If `squash`, Codex summarizes the journey into a commit message. |
 | `MCO_DRY_RUN` | `0` | If `1`, disables actual PR creation, commits, and Codex pings. |
 
 ## Project Structure & Distribution
