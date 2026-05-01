@@ -86,6 +86,7 @@ export GH_TOKEN=$(gh auth token)            # used by pr-loop to read/post on PR
 export MCO_MAX_ROUNDS=4                     # default 4
 export MCO_TOKEN_BUDGET_USD=5.00            # abort + notify if exceeded
 export MCO_BLOCKING_SEVERITIES="P0,P1"      # default P0,P1
+export MCO_LOW_BUDGET=1                     # aggressively route to cheap workers (Kimi, Gemini)
 ```
 
 Make sure your project's `main` has branch protection enabled with required status checks (CI, tests, typecheck, lint). The auto-merge gate relies on it.
@@ -126,7 +127,7 @@ Make sure your project's `main` has branch protection enabled with required stat
 | Skill | Trigger | Job |
 |---|---|---|
 | [`start-feature`](skills/start-feature/SKILL.md) | User describes a feature, bug, or change | Brainstorm spec, generate test plan, create branch, open PR, hand off |
-| [`route-task`](skills/route-task/SKILL.md) | Implementation task needs a worker | Pick Claude / OpenCode / Gemini by task type and return the prompt |
+| [`route-task`](skills/route-task/SKILL.md) | Implementation task needs a worker | Pick Claude / OpenCode / Gemini / Smart Worker by task type and session budget |
 | [`pr-loop`](skills/pr-loop/SKILL.md) | PR is open and ready for review | Run the Codex review cycle, fix on rounds 1–2, escalate on round 3, stop on round 4, auto-merge when green |
 
 ### The subagents (Claude Code / OpenCode only)
@@ -197,6 +198,11 @@ Don't skip phases.
 - [Vercel `skills` CLI](https://github.com/vercel-labs/skills) — distribution.
 - [A2A protocol](https://a2a-protocol.org/) — deferred; Phase 4 candidate.
 - [obra/superpowers](https://github.com/obra/superpowers) — distribution-pattern reference.
+
+## License
+
+MIT — see [LICENSE](LICENSE).
+bra/superpowers) — distribution-pattern reference.
 
 ## License
 

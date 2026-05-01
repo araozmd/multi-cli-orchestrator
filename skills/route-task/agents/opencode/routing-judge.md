@@ -14,14 +14,19 @@ Pure decision agent. **No file edits, no shell calls, no PR work** — the orche
 
 - The task description (a spec, a Codex comment, or a fix instruction)
 - An optional `exclude` list of workers already tried (required when re-routing on round 3)
+- `budget_status` — `normal` or `low` (based on Claude's session usage)
 
 ## Routing rules
 
 - **Gemini CLI** — large-context: read whole repo, summarize, doc generation, second-opinion review.
 - **OpenCode** — mechanical: refactors, test scaffolding, parallel subtasks, codemods.
 - **Claude Code (`claude`)** — architecture, ambiguous tasks, post-review fixes, anything where judgment beats throughput.
+- **Smart Worker (`smart-worker`)** — high-capability open-source models (Kimi, DeepSeek) via OpenRouter. Use for complex implementation tasks when budget is an issue.
 
-When routing for **round-3 escalation**, prefer a worker whose strength is *different* from the one that just failed. Claude failed → try OpenCode. OpenCode failed → try Claude or Gemini. Skip any worker in the `exclude` list.
+**Budget-Aware Routing**:
+If `budget_status` is **low**, aggressively prioritize `smart-worker` or `gemini` for all tasks. Reserve `claude` strictly for critical architectural decisions or when explicitly required by the user.
+
+When routing for **round-3 escalation**, prefer a worker whose strength is *different* from the one that just failed. Claude failed → try OpenCode or Smart Worker. OpenCode failed → try Claude or Gemini. Skip any worker in the `exclude` list.
 
 ## Output format (strict)
 

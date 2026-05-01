@@ -44,6 +44,43 @@ case "$WORKER" in
   claude)   CMD=(npx -y @anthropic-ai/claude-code --dangerously-skip-permissions -p "$PROMPT") ;;
   opencode) CMD=(opencode --pure run --dangerously-skip-permissions "$PROMPT") ;;
   gemini)   CMD=(gemini --approval-mode yolo -p "$PROMPT") ;;
+  smart-worker|opencode-or)
+    # Budget-aware worker using OpenRouter models via OpenCode.
+    # Prioritizes high-capability, lower-cost open-source models with fallbacks.
+    MODELS=(
+      "openrouter/moonshotai/kimi-k2"
+      "openrouter/deepseek/deepseek-chat-v3.1"
+      "openrouter/google/gemini-2.5-flash"
+    )
+    
+    EXIT_CODE=1
+    for MODEL in "${MODELS[@]}"; do
+      echo "Attemping smart-worker implementation with $MODEL..." >&2
+      CMD=(opencode --pure run --dangerously-skip-permissions -m "$MODEL" "$PROMPT")
+      
+      if [[ "${MCO_DRY_RUN:-0}" == "1" ]]; then
+        printf 'DRY RUN: '
+        printf '%q ' "${CMD[@]}"
+        printf '\n'
+        exit 0
+      fi
+
+      if [[ -n "$LOG_DIR" ]]; then
+        mkdir -p "$LOG_DIR"
+        if "${CMD[@]}" >"$LOG_DIR/$WORKER.out" 2>"$LOG_DIR/$WORKER.err"; then
+          EXIT_CODE=0
+          break
+        fi
+      else
+        if "${CMD[@]}"; then
+          EXIT_CODE=0
+          break
+        fi
+      fi
+      echo "Warning: $MODEL failed, attempting fallback..." >&2
+    done
+    exit "$EXIT_CODE"
+    ;;
   *)        echo "error: unknown worker: $WORKER" >&2; exit 2 ;;
 esac
 

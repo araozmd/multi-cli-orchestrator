@@ -10,10 +10,10 @@ Encapsulates the task-type → worker mapping in one place so routing stays debu
 ## Routing rules (v1)
 
 | Worker | When to pick |
-|---|---|
 | **Gemini CLI** | Large-context: read whole repo, summarize, doc generation, second-opinion review |
 | **OpenCode** | Mechanical: refactors, test scaffolding, parallel subtasks, codemods |
 | **Claude Code (self)** | Architecture, ambiguous tasks, post-review fixes, anything where judgment beats throughput |
+| **Smart Worker** | High-capability open-source models (Kimi, DeepSeek) via OpenRouter. Pick for complex implementation tasks when session budget is low. |
 
 ## Inputs
 
@@ -23,21 +23,34 @@ The caller (usually `start-feature` or `pr-loop`) provides:
 - `pr_number` — the in-flight PR (used for cache path)
 - `round` — `0` for initial implementation, `≥3` for escalation re-routing
 - `exclude` (optional, comma-separated) — workers already tried and to skip; required when `round ≥ 3`
+- `budget_status` (optional) — `normal` or `low`. If omitted, defaults to `normal` unless `MCO_LOW_BUDGET=1` is set in the environment.
 
 ## Runbook
 
 ### Step 1 — Decide the worker
+
+Determine the `budget_status`:
+```bash
+if [[ "${MCO_LOW_BUDGET:-0}" == "1" ]]; then
+  status="low"
+else
+  status="${budget_status:-normal}"
+fi
+```
 
 Spawn the `route-task-routing-judge` subagent (Agent tool, `subagent_type: route-task-routing-judge`). Pass it:
 
 - The contents of the task file
 - The routing rules above (verbatim)
 - The exclude list (if present)
+- The `budget_status`: $status
 
 Expect the subagent to return three fields, parseable from its message:
 
 ```
-worker: <claude|opencode|gemini>
+worker: <claude|opencode|gemini|smart-worker>
+```
+
 rationale: <one sentence>
 prompt: <the task prompt rewritten for the chosen worker>
 ```
