@@ -17,7 +17,7 @@ Encapsulates the task-type → worker mapping so routing is debuggable and chang
 
 ## Subagent
 
-`agents/routing-judge.md` — runs the routing decision in an isolated context so the orchestrator's main context stays compact.
+`agents/claude-code/routing-judge.md` (Claude Code) and `agents/opencode/routing-judge.md` (OpenCode) — runs the routing decision in an isolated context so the orchestrator's main context stays compact. Registered as `route-task-routing-judge` after `scripts/install-agents.sh` runs.
 
 ## Output
 

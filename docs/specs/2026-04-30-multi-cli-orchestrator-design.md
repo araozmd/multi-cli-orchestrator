@@ -26,8 +26,8 @@ Reduce token pressure on Claude Code by routing implementation work to specializ
 | Codex blocking severity | **P0 + P1 only** | P2 and nits do not gate merge. Style preferences must not loop forever. |
 | Orchestrator runtime | **Interactive Claude Code (v1)** | Lowest friction for v1. Tracked as tech debt: migrate to Claude Agent SDK driver once the loop is proven on 2–3 PRs, GitHub Action only when team-shared. |
 | State / artifacts | **PR description + gitignored cache** | PR description holds plan + test plan (the contract, visible to humans, discoverable via `gh`). `.mco-cache/<pr-number>/` (gitignored) holds per-iteration artifacts: Codex comment dumps, fix summaries, last-known-good diffs. |
-| Subagents | **Yes (Claude Code + OpenCode only)** | `pr-fixer` and `routing-judge` give context isolation per iteration. Subagents only translate to Claude Code and OpenCode; Codex CLI and Gemini CLI lack the abstraction. Worker CLIs are invoked as plain CLIs, not subagents. |
-| Distribution | **`npx skills`** (vercel-labs/skills) | 16K-star CLI handles 50+ agent CLIs. No installer to write — publish skills following the convention (`skills/<name>/SKILL.md`) and `npx skills add araozmd/multi-cli-orchestrator` works. |
+| Subagents | **Yes (Claude Code + OpenCode only)** | `pr-fixer` and `routing-judge` give context isolation per iteration. Subagents only translate to Claude Code and OpenCode; Codex CLI and Gemini CLI lack the abstraction. Worker CLIs are invoked as plain CLIs, not subagents. The two CLIs use different frontmatter (Claude Code: `name:` field as identifier; OpenCode: filename as identifier + `mode: subagent` required), so each subagent ships in two versions under `agents/claude-code/` and `agents/opencode/`. |
+| Distribution | **`npx skills` + post-install bootstrap** | `npx skills add araozmd/multi-cli-orchestrator` installs the skill folders, but the skills CLI does not relocate bundled subagents into each CLI's native agents dir (`~/.claude/agents/`, `~/.config/opencode/agents/`). A one-shot `scripts/install-agents.sh` symlinks them, namespaced as `<skill>-<agent>.md`. Idempotent; re-runnable after updates. |
 
 ## Architecture
 
@@ -60,10 +60,11 @@ You ─────────────────► Claude Code (orchestr
 |---|---|---|
 | `start-feature` skill | `skills/start-feature/SKILL.md` | Entry point. Brainstorm spec, generate test plan, open PR, hand off. |
 | `route-task` skill | `skills/route-task/SKILL.md` | Decide which worker handles a task; encode the routing rules. |
-| `routing-judge` subagent | `skills/route-task/agents/routing-judge.md` | Pure decision agent for routing; returns `{worker, rationale, prompt}`. |
+| `routing-judge` subagent | `skills/route-task/agents/{claude-code,opencode}/routing-judge.md` | Pure decision agent for routing; returns `{worker, rationale, prompt}`. Two CLI-specific frontmatter variants. |
 | `pr-loop` skill | `skills/pr-loop/SKILL.md` | Drive the Codex review cycle and auto-merge. |
-| `pr-fixer` subagent | `skills/pr-loop/agents/pr-fixer.md` | Fix one Codex comment per invocation in isolated context. |
+| `pr-fixer` subagent | `skills/pr-loop/agents/{claude-code,opencode}/pr-fixer.md` | Fix one Codex comment per invocation in isolated context. Two CLI-specific frontmatter variants. |
 | `invoke-worker.sh` | `scripts/invoke-worker.sh` | Single chokepoint for worker CLI invocation. Future A2A swap point. |
+| `install-agents.sh` | `scripts/install-agents.sh` | Post-install bootstrap. Symlinks bundled subagents into each CLI's native agents dir under a `<skill>-<agent>.md` namespace. |
 
 ### Data flow per feature
 
@@ -124,8 +125,8 @@ You ─────────────────► Claude Code (orchestr
 ## Distribution
 
 - Public GitHub repo `araozmd/multi-cli-orchestrator`.
-- Installable via `npx skills add araozmd/multi-cli-orchestrator` (vercel-labs/skills CLI; no extra setup).
-- Targets all 50+ agents the `skills` CLI supports; subagents are bundled inside skill folders so they install alongside skills without a parallel install path.
+- Installable via `npx skills add araozmd/multi-cli-orchestrator` (vercel-labs/skills CLI).
+- Targets all 50+ agents the `skills` CLI supports for the skill files themselves. Subagents are bundled inside skill folders, but the skills CLI does not auto-register them with Claude Code or OpenCode; users run `scripts/install-agents.sh` once after install (and after any update that ships new subagents) to symlink them into each CLI's native agents directory. The bootstrap is namespaced (`<skill>-<agent>.md`) so multiple skills can share an agent name without colliding.
 
 ## Tech debt / deferred
 

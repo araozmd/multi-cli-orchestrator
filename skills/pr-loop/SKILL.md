@@ -33,7 +33,7 @@ When all green: auto-merge, archive the cache directory.
 
 ## Subagent
 
-`agents/pr-fixer.md` — fixes one Codex comment per invocation in an isolated context.
+`agents/claude-code/pr-fixer.md` (Claude Code) and `agents/opencode/pr-fixer.md` (OpenCode) — same role (fix one Codex comment per invocation in isolated context), different frontmatter per CLI. Registered as `pr-loop-pr-fixer` after `scripts/install-agents.sh` runs.
 
 ## State
 

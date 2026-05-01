@@ -52,6 +52,26 @@ Update later:
 npx skills update
 ```
 
+### Register the bundled subagents
+
+The `npx skills` CLI installs each skill folder as-is, but it does **not** relocate the bundled subagents (`pr-fixer`, `routing-judge`) into the per-CLI agents directory where Claude Code (`~/.claude/agents/`) and OpenCode (`~/.config/opencode/agents/`) actually look. Run the bootstrap once to symlink them:
+
+```bash
+# After `npx skills add ... -g`
+./scripts/install-agents.sh --global
+
+# Or, for a project-scoped install
+./scripts/install-agents.sh --project
+```
+
+What the script does:
+
+- Walks every `<skills-dir>/*/agents/{claude-code,opencode}/*.md` it finds (Claude Code skills under `.claude/skills/`, OpenCode skills under `.agents/skills/` or `~/.config/opencode/skills/`).
+- Symlinks each one into the matching CLI's agents directory under a namespaced filename (`<skill>-<agent>.md`, e.g. `pr-loop-pr-fixer.md`) so multiple skills can ship a `pr-fixer` without collision.
+- Idempotent — re-run after every `npx skills update` that adds new subagents. Use `--unlink` to remove them, `--dry-run` to preview.
+
+If you only have one CLI installed, the script silently skips the other.
+
 ## Configuration
 
 After install, set a few environment variables (or use `direnv` per project):
@@ -111,8 +131,10 @@ Make sure your project's `main` has branch protection enabled with required stat
 
 | Subagent | Lives in | Job |
 |---|---|---|
-| [`routing-judge`](skills/route-task/agents/routing-judge.md) | `route-task` | Pure routing decision in an isolated context |
-| [`pr-fixer`](skills/pr-loop/agents/pr-fixer.md) | `pr-loop` | Fix a single Codex comment per invocation |
+| [`routing-judge`](skills/route-task/agents/) | `route-task` | Pure routing decision in an isolated context. Two versions: [Claude Code](skills/route-task/agents/claude-code/routing-judge.md), [OpenCode](skills/route-task/agents/opencode/routing-judge.md) |
+| [`pr-fixer`](skills/pr-loop/agents/) | `pr-loop` | Fix a single Codex comment per invocation. Two versions: [Claude Code](skills/pr-loop/agents/claude-code/pr-fixer.md), [OpenCode](skills/pr-loop/agents/opencode/pr-fixer.md) |
+
+The two CLIs need different frontmatter (Claude Code uses `name:` as the agent identifier; OpenCode uses the filename and requires `mode: subagent`), so each subagent ships in two formats. The bootstrap script picks the right one per CLI.
 
 ### Worker invocation seam
 
