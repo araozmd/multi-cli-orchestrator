@@ -30,12 +30,20 @@ fi
 
 PROMPT="$(cat "$PROMPT_FILE")"
 
-# Headless worker mode: each CLI needs an explicit "auto-approve edits" flag,
-# otherwise it will hang waiting for an interactive permission prompt.
+# Headless worker mode: each CLI needs a flag that auto-approves BOTH edits
+# AND shell commands. The "auto-approve edits only" modes (claude's
+# acceptEdits, gemini's auto_edit) silently break workers that need to run
+# yarn / npm / git / pytest / etc. — the worker writes files but stalls on
+# the first bash call, leaving an uncommitted diff.
+#
+# Risk model: workers run in feature branches with the user's auth, on tasks
+# the user asked for. Letting them edit files but not run shell is friction
+# without a security benefit (a malicious edit can ship; we just block the
+# commit that surfaces it). All three CLIs use the equivalent of "yolo" mode.
 case "$WORKER" in
-  claude)   CMD=(npx -y @anthropic-ai/claude-code --permission-mode acceptEdits -p "$PROMPT") ;;
+  claude)   CMD=(npx -y @anthropic-ai/claude-code --dangerously-skip-permissions -p "$PROMPT") ;;
   opencode) CMD=(opencode --pure run --dangerously-skip-permissions "$PROMPT") ;;
-  gemini)   CMD=(gemini --approval-mode auto_edit -p "$PROMPT") ;;
+  gemini)   CMD=(gemini --approval-mode yolo -p "$PROMPT") ;;
   *)        echo "error: unknown worker: $WORKER" >&2; exit 2 ;;
 esac
 
