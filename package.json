@@ -1,0 +1,19 @@
+{
+  "name": "multi-cli-orchestrator",
+  "version": "0.1.0",
+  "description": "Cross-CLI orchestration skills: Claude Code routes implementation work to Gemini/OpenCode and runs a Codex PR review loop.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/araozmd/multi-cli-orchestrator.git"
+  },
+  "keywords": [
+    "claude-code",
+    "codex",
+    "opencode",
+    "gemini",
+    "agent-skills",
+    "orchestration",
+    "pr-review"
+  ]
+}
