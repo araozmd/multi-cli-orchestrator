@@ -112,6 +112,7 @@ You ─────────────────► Claude Code (orchestr
 - **CI failure.** Treated as blocking. Same fix flow as Codex P0.
 - **Worker invocation failure** (CLI exit non-zero). Retry once; if it fails again, label `needs-human`.
 - **Cache corruption / missing artifacts.** Loop reconstructs from `gh` API; cache is best-effort, not authoritative.
+- **Concurrent `/start-feature` invocations.** v1 is single-feature: `start-feature` writes `.mco-cache/_lock` containing the in-flight PR number / branch. A second invocation refuses with a message pointing to the held lock. Lock is removed when the loop reaches "ready to merge" (or `needs-human`). Worktree-based parallelism is tracked as Phase 1.5 tech debt.
 
 ## Phased rollout
 
@@ -135,6 +136,8 @@ You ─────────────────► Claude Code (orchestr
 - A2A wrapping of workers (Phase 4, optional).
 - LangGraph / CrewAI runtime (Gemini's suggestion; YAGNI for current scale).
 - Issue-driven state model (only if existing workflows already track work in issues).
+- **Worktree-based parallel features (Phase 1.5 / Phase 2).** v1 sequences concurrent `/start-feature` invocations with a `.mco-cache/_lock` file — the second invocation refuses until the first completes. Once the loop is validated on a real PR, swap the lock for a per-feature `git worktree` (using the `using-git-worktrees` skill) so features can run in parallel without sharing a working tree. GitHub `main` remains the integration point; do not introduce a local integration branch.
+- **Self-review inside `pr-fixer` (optional polish).** Layering `requesting-code-review` / `receiving-code-review` into the fixer subagent could catch obvious mistakes before pushing, but Codex is the merge gate — self-review is not a Phase 1 requirement.
 
 ## Open questions
 

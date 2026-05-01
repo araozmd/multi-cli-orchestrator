@@ -5,26 +5,81 @@ description: Decide which CLI worker (Claude, OpenCode, or Gemini) should implem
 
 # route-task
 
-> Status: scaffold. Implementation lands in Phase 1 per `docs/specs/2026-04-30-multi-cli-orchestrator-design.md`.
-
-Encapsulates the task-type → worker mapping so routing is debuggable and changeable in one place.
+Encapsulates the task-type → worker mapping in one place so routing stays debuggable.
 
 ## Routing rules (v1)
 
-- **Gemini CLI** — large-context tasks: read whole repo, summarize, doc generation, second-opinion review.
-- **OpenCode** — mechanical implementation: refactors, test scaffolding, parallel subtasks.
-- **Claude Code (self)** — architecture, ambiguous tasks, post-review fixes, anything where judgment beats throughput.
+| Worker | When to pick |
+|---|---|
+| **Gemini CLI** | Large-context: read whole repo, summarize, doc generation, second-opinion review |
+| **OpenCode** | Mechanical: refactors, test scaffolding, parallel subtasks, codemods |
+| **Claude Code (self)** | Architecture, ambiguous tasks, post-review fixes, anything where judgment beats throughput |
 
-## Subagent
+## Inputs
 
-`agents/claude-code/routing-judge.md` (Claude Code) and `agents/opencode/routing-judge.md` (OpenCode) — runs the routing decision in an isolated context so the orchestrator's main context stays compact. Registered as `route-task-routing-judge` after `scripts/install-agents.sh` runs.
+The caller (usually `start-feature` or `pr-loop`) provides:
 
-## Output
+- `task` — path to a markdown file describing the work
+- `pr_number` — the in-flight PR (used for cache path)
+- `round` — `0` for initial implementation, `≥3` for escalation re-routing
+- `exclude` (optional, comma-separated) — workers already tried and to skip; required when `round ≥ 3`
+
+## Runbook
+
+### Step 1 — Decide the worker
+
+Spawn the `route-task-routing-judge` subagent (Agent tool, `subagent_type: route-task-routing-judge`). Pass it:
+
+- The contents of the task file
+- The routing rules above (verbatim)
+- The exclude list (if present)
+
+Expect the subagent to return three fields, parseable from its message:
 
 ```
 worker: <claude|opencode|gemini>
 rationale: <one sentence>
-prompt: <the task prompt to pass to the worker>
+prompt: <the task prompt rewritten for the chosen worker>
 ```
 
-The caller invokes the worker via `scripts/invoke-worker.sh <worker> "<prompt>"`.
+If parsing fails (missing field, unknown worker, worker is in `exclude`), retry the subagent once with the explicit constraint quoted back. If it fails again, return failure to the caller — do not silently default to a worker.
+
+### Step 2 — Cache the routing decision
+
+```bash
+round_dir=".mco-cache/$pr_number/round-$round"
+mkdir -p "$round_dir"
+echo "$worker" > "$round_dir/worker"
+echo "$rationale" > "$round_dir/rationale"
+printf '%s' "$prompt" > "$round_dir/prompt.md"
+```
+
+### Step 3 — Invoke the worker
+
+```bash
+bash scripts/invoke-worker.sh "$worker" "$round_dir/prompt.md" "$round_dir"
+```
+
+Exit code handling:
+- `0` → continue to Step 4
+- non-zero → retry **once** with the same prompt. If it fails again, return failure to the caller (do **not** auto-reroute here; that's `pr-loop`'s job on round 3).
+
+### Step 4 — Capture commits and push
+
+The worker is expected to commit to the current branch. Verify it did:
+
+```bash
+git diff --quiet HEAD@{1} HEAD || echo "worker produced commits"
+git status --porcelain  # should be empty; refuse to push if dirty (worker forgot to commit)
+git push
+```
+
+If the worker left an unstaged diff (didn't commit), surface that to the caller as a failure rather than committing on its behalf — committing for the worker hides routing/prompt bugs.
+
+### Step 5 — Return to caller
+
+Return the `{worker, rationale}` pair so the caller (e.g. `pr-loop`) can log it and feed it into round-3 escalation logic.
+
+## Subagent
+
+`agents/claude-code/routing-judge.md` and `agents/opencode/routing-judge.md` — same role, two CLI-specific frontmatter variants. Registered as `route-task-routing-judge` after `scripts/install-agents.sh` runs. Keep both bodies in sync.

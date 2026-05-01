@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 A distribution kit (not an application). It ships agent **skills** + **subagents** that turn Claude Code into an orchestrator that routes implementation work to other CLIs (OpenCode, Gemini) and runs an autonomous Codex PR review loop. Distributed via `npx skills add araozmd/multi-cli-orchestrator`.
 
-Status is `v0.1.0` — scaffold only. Every `SKILL.md`, subagent, and `scripts/invoke-worker.sh` is a placeholder that points to the design spec. Phase 1 implementation has not started. **The canonical contract is [`docs/specs/2026-04-30-multi-cli-orchestrator-design.md`](docs/specs/2026-04-30-multi-cli-orchestrator-design.md) — read it before changing skill behavior, routing rules, or merge gates.**
+Status is `v0.1.0` — **Phase 1 implemented (human-merge mode), unproven**. The three skills (`start-feature`, `route-task`, `pr-loop`), both subagents (`routing-judge`, `pr-fixer`), and `scripts/invoke-worker.sh` have executable runbooks. Auto-merge is intentionally off (Phase 1 stops at "ready to merge"; flip on in Phase 2). Concurrency is a `.mco-cache/_lock` file (sequential); worktree-based parallelism is Phase 1.5/2 tech debt. **The canonical contract is [`docs/specs/2026-04-30-multi-cli-orchestrator-design.md`](docs/specs/2026-04-30-multi-cli-orchestrator-design.md) — read it before changing skill behavior, routing rules, or merge gates.**
 
 ## Architecture (big picture)
 
@@ -42,4 +42,11 @@ Skills are consumed by `vercel-labs/skills` CLI, which expects the layout `skill
 
 ## Common commands
 
-There is no build/test/lint right now — `package.json` has no scripts and no dependencies. When Phase 1 lands, the relevant commands will be the consumer-facing ones (`/start-feature "..."`, `npx skills update`) and `gh` calls inside `pr-loop`. Update this section once those exist.
+No build/test/lint — this is a distribution kit, not an app. Consumer-facing commands:
+
+- `/start-feature "<description>"` — entry point. Brainstorms, opens a draft PR, hands off to `route-task` and `pr-loop`.
+- `npx skills update` — pull the latest skills from GitHub. **Re-run `scripts/install-agents.sh` after every update** so subagent symlinks pick up new/renamed agents.
+- `bash scripts/install-agents.sh` (idempotent) — symlink bundled subagents into `~/.claude/agents/` and `~/.config/opencode/agents/`. Use `--dry-run` to preview, `--unlink` to remove.
+- `MCO_DRY_RUN=1 bash scripts/invoke-worker.sh <claude|opencode|gemini> <prompt-file>` — exercise the worker chokepoint without spending tokens.
+
+The `pr-loop` skill itself shells out to `gh` (`gh pr view`, `gh pr comment`, `gh pr ready`, `gh pr edit`); it does **not** run `gh pr merge` in Phase 1 — the human merges.
