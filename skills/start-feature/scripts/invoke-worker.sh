@@ -5,7 +5,7 @@
 # Future: drop-in replacement for an A2A client wrapper. Keep the signature stable.
 #
 # Usage: invoke-worker.sh <worker> <prompt-file> [log-dir]
-#   worker:      claude | opencode | gemini
+#   worker:      claude | codex | gemini | opencode | smart-worker
 #   prompt-file: path to a file containing the task prompt
 #   log-dir:     optional directory; if set, stdout/stderr captured to <log-dir>/<worker>.{out,err}
 #
@@ -19,7 +19,7 @@ PROMPT_FILE="${2:-}"
 LOG_DIR="${3:-}"
 
 if [[ -z "$WORKER" || -z "$PROMPT_FILE" ]]; then
-  echo "usage: $0 <claude|opencode|gemini> <prompt-file> [log-dir]" >&2
+  echo "usage: $0 <claude|codex|gemini|opencode|smart-worker> <prompt-file> [log-dir]" >&2
   exit 2
 fi
 
@@ -30,60 +30,94 @@ fi
 
 PROMPT="$(cat "$PROMPT_FILE")"
 
-# Headless worker mode: each CLI needs a flag that auto-approves BOTH edits
-# AND shell commands. The "auto-approve edits only" modes (claude's
-# acceptEdits, gemini's auto_edit) silently break workers that need to run
-# yarn / npm / git / pytest / etc. — the worker writes files but stalls on
-# the first bash call, leaving an uncommitted diff.
-#
-# Risk model: workers run in feature branches with the user's auth, on tasks
-# the user asked for. Letting them edit files but not run shell is friction
-# without a security benefit (a malicious edit can ship; we just block the
-# commit that surfaces it). All three CLIs use the equivalent of "yolo" mode.
+# Helper to run OpenCode commands with billing fallback
+run_opencode_cmd() {
+  local cmd=("$@")
+  
+  if [[ "${MCO_DRY_RUN:-0}" == "1" ]]; then
+    printf 'DRY RUN: '
+    printf '%q ' "${cmd[@]}"
+    printf '\n'
+    return 0
+  fi
+
+  local temp_combined
+  temp_combined=$(mktemp)
+  local exit_code=0
+  
+  if ! "${cmd[@]}" >"$temp_combined" 2>&1; then
+    exit_code=$?
+  fi
+
+  # Check for billing errors
+  if grep -qiE "insufficient balance|recharge|suspended" "$temp_combined"; then
+    echo "Warning: OpenCode billing issue detected." >&2
+    rm -f "$temp_combined"
+    return 126 # Specific code for billing fallback
+  fi
+
+  if [[ -n "$LOG_DIR" ]]; then
+    mkdir -p "$LOG_DIR"
+    cat "$temp_combined" >"$LOG_DIR/$WORKER.out"
+    [[ "$exit_code" != "0" ]] && cat "$temp_combined" >"$LOG_DIR/$WORKER.err"
+  fi
+  
+  cat "$temp_combined"
+  rm -f "$temp_combined"
+  return "$exit_code"
+}
+
 case "$WORKER" in
-  claude)   CMD=(npx -y @anthropic-ai/claude-code --dangerously-skip-permissions -p "$PROMPT") ;;
-  opencode) CMD=(opencode --pure run --dangerously-skip-permissions "$PROMPT") ;;
-  gemini)   CMD=(gemini --approval-mode yolo -p "$PROMPT") ;;
-  smart-worker|opencode-or)
-    # Budget-aware worker using OpenRouter models via OpenCode.
-    # Prioritizes high-capability, lower-cost open-source models with fallbacks.
+  claude)
+    CMD=(npx -y @anthropic-ai/claude-code --dangerously-skip-permissions -p "$PROMPT")
+    ;;
+  codex)
+    # L4 (Expert) — High-speed implementation (GPT-5.3)
+    CMD=(opencode --pure run --dangerously-skip-permissions -m "openai/gpt-5.3-codex" "$PROMPT")
+    if ! run_opencode_cmd "${CMD[@]}"; then
+      [[ $? -eq 126 ]] && exec "$0" "smart-worker" "$PROMPT_FILE" "$LOG_DIR"
+      exit $?
+    fi
+    exit 0
+    ;;
+  opencode)
+    # L2 (Efficiency) — Default technical work (DeepSeek V4 Pro)
+    CMD=(opencode --pure run --dangerously-skip-permissions -m "opencode-go/deepseek-v4-pro" "$PROMPT")
+    if ! run_opencode_cmd "${CMD[@]}"; then
+      [[ $? -eq 126 ]] && exec "$0" "smart-worker" "$PROMPT_FILE" "$LOG_DIR"
+      exit $?
+    fi
+    exit 0
+    ;;
+  gemini)
+    CMD=(gemini --approval-mode yolo -p "$PROMPT")
+    ;;
+  smart-worker)
+    # L1 (Mechanical) — Budget-aware throughput tier.
     MODELS=(
-      "openrouter/moonshotai/kimi-k2"
-      "openrouter/deepseek/deepseek-chat-v3.1"
-      "openrouter/google/gemini-2.5-flash"
+      "opencode-go/kimi-k2.6"
+      "opencode-go/qwen3.6-plus"
     )
-    
-    EXIT_CODE=1
     for MODEL in "${MODELS[@]}"; do
       echo "Attemping smart-worker implementation with $MODEL..." >&2
       CMD=(opencode --pure run --dangerously-skip-permissions -m "$MODEL" "$PROMPT")
-      
-      if [[ "${MCO_DRY_RUN:-0}" == "1" ]]; then
-        printf 'DRY RUN: '
-        printf '%q ' "${CMD[@]}"
-        printf '\n'
+      if run_opencode_cmd "${CMD[@]}"; then
         exit 0
-      fi
-
-      if [[ -n "$LOG_DIR" ]]; then
-        mkdir -p "$LOG_DIR"
-        if "${CMD[@]}" >"$LOG_DIR/$WORKER.out" 2>"$LOG_DIR/$WORKER.err"; then
-          EXIT_CODE=0
-          break
-        fi
+      elif [[ $? -eq 126 ]]; then
+        continue # Try next model if billing issue
       else
-        if "${CMD[@]}"; then
-          EXIT_CODE=0
-          break
-        fi
+        echo "Warning: $MODEL failed, attempting fallback..." >&2
       fi
-      echo "Warning: $MODEL failed, attempting fallback..." >&2
     done
-    exit "$EXIT_CODE"
+    exit 1
     ;;
-  *)        echo "error: unknown worker: $WORKER" >&2; exit 2 ;;
+  *)
+    echo "error: unknown worker: $WORKER" >&2
+    exit 2
+    ;;
 esac
 
+# Fallback for non-opencode workers (claude, gemini)
 if [[ "${MCO_DRY_RUN:-0}" == "1" ]]; then
   printf 'DRY RUN: '
   printf '%q ' "${CMD[@]}"

@@ -7,13 +7,15 @@ description: Decide which CLI worker (Claude, OpenCode, or Gemini) should implem
 
 Encapsulates the task-type → worker mapping in one place so routing stays debuggable.
 
-## Routing rules (v1)
+## Routing rules (v2 — 2026 Strategy)
 
-| Worker | When to pick |
-| **Gemini CLI** | Large-context: read whole repo, summarize, doc generation, second-opinion review |
-| **OpenCode** | Mechanical: refactors, test scaffolding, parallel subtasks, codemods |
-| **Claude Code (self)** | Architecture, ambiguous tasks, post-review fixes, anything where judgment beats throughput |
-| **Smart Worker** | High-capability open-source models (Kimi, DeepSeek) via OpenRouter. Pick for complex implementation tasks when session budget is low. |
+| Tier | Worker | When to pick |
+| :--- | :--- | :--- |
+| **L5 (Critical)** | **Claude Code** | Architecture, vague specs, core logic refactors, or "impossible" bugs. |
+| **L4 (Expert)** | **Codex** | High-speed implementation of complex but well-defined technical plans (GPT-5.3). |
+| **L3 (Standard)** | **Gemini CLI** | Large-context: whole-repo migrations, doc generation, second-opinion review. |
+| **L2 (Efficiency)** | **OpenCode** | Unit tests, boilerplate, utility functions. Uses subscription models. |
+| **L1 (Mechanical)** | **Smart Worker** | Formatting, lint fixes, trivial docs. Lowest cost/highest throughput. |
 
 ## Inputs
 
@@ -45,26 +47,28 @@ Spawn the `route-task-routing-judge` subagent (Agent tool, `subagent_type: route
 - The exclude list (if present)
 - The `budget_status`: $status
 
-Expect the subagent to return three fields, parseable from its message:
+Expect the subagent to return four fields, parseable from its message:
 
 ```
-worker: <claude|opencode|gemini|smart-worker>
-```
-
+complexity: <1-5>
+worker: <claude|codex|gemini|opencode|smart-worker>
 rationale: <one sentence>
 prompt: <the task prompt rewritten for the chosen worker>
 ```
 
-If parsing fails (missing field, unknown worker, worker is in `exclude`), retry the subagent once with the explicit constraint quoted back. If it fails again, return failure to the caller — do not silently default to a worker.
+If parsing fails (missing field, unknown worker, worker is in `exclude`), retry the subagent once with the explicit constraint quoted back. If it fails again, return failure to the caller.
 
-### Step 2 — Cache the routing decision
+### Step 2 — Cache the routing decision & telemetry
 
 ```bash
 round_dir=".mco-cache/$pr_number/round-$round"
 mkdir -p "$round_dir"
+echo "$complexity" > "$round_dir/complexity"
 echo "$worker" > "$round_dir/worker"
 echo "$rationale" > "$round_dir/rationale"
 printf '%s' "$prompt" > "$round_dir/prompt.md"
+echo "$(date +%s)" > "$round_dir/start_time"
+
 # role: implementation | fix | escalation — used by pr-loop's handover summary
 if [[ "$round" == "0" ]]; then
   echo "implementation" > "$round_dir/role"
@@ -76,31 +80,31 @@ fi
 ### Step 3 — Invoke the worker
 
 ```bash
-# invoke-worker.sh ships inside the start-feature skill; resolve via the
-# canonical install path (override with MCO_SKILL_ROOT for tests).
 INVOKE="${MCO_SKILL_ROOT:-$HOME/.agents/skills/start-feature}/scripts/invoke-worker.sh"
-bash "$INVOKE" "$worker" "$round_dir/prompt.md" "$round_dir"
+if bash "$INVOKE" "$worker" "$round_dir/prompt.md" "$round_dir"; then
+  echo "success" > "$round_dir/status"
+else
+  echo "failure" > "$round_dir/status"
+  exit 1
+fi
+echo "$(date +%s)" > "$round_dir/end_time"
 ```
 
-Exit code handling:
-- `0` → continue to Step 4
-- non-zero → retry **once** with the same prompt. If it fails again, return failure to the caller (do **not** auto-reroute here; that's `pr-loop`'s job on round 3).
+### Step 4 — Update Global Metrics
 
-### Step 4 — Capture commits and push
-
-The worker is expected to commit to the current branch. Verify it did:
-
-```bash
-git diff --quiet HEAD@{1} HEAD || echo "worker produced commits"
-git status --porcelain  # should be empty; refuse to push if dirty (worker forgot to commit)
-git push
+After completion, append the result to `.mco-cache/metrics.json` (initialize if missing):
+```json
+{
+  "timestamp": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")",
+  "pr": "$pr_number",
+  "round": "$round",
+  "worker": "$worker",
+  "complexity": "$complexity",
+  "status": "$(cat $round_dir/status)",
+  "duration": $(( $(cat $round_dir/end_time) - $(cat $round_dir/start_time) ))
+}
 ```
 
-If the worker left an unstaged diff (didn't commit), surface that to the caller as a failure rather than committing on its behalf — committing for the worker hides routing/prompt bugs.
-
-### Step 5 — Return to caller
-
-Return the `{worker, rationale}` pair so the caller (e.g. `pr-loop`) can log it and feed it into round-3 escalation logic.
 
 ## Subagent
 

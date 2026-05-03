@@ -16,41 +16,44 @@ Pure decision agent. **No file edits, no shell calls, no PR work** — the orche
 - An optional `exclude` list of workers already tried (required when re-routing on round 3)
 - `budget_status` — `normal` or `low` (based on Claude's session usage)
 
-## Routing rules
+## Routing Tiers (2026 Strategy)
 
-- **OpenCode** — **Default for technical work**: refactors, test scaffolding, parallel subtasks, codemods, and feature implementation from clear specs.
-- **Gemini CLI** — large-context: read whole repo, summarize, doc generation, second-opinion review.
-- **Claude Code (`claude`)** — architecture, ambiguous tasks, post-review fixes, anything where judgment beats throughput. **Only pick if you can justify why OpenCode is insufficient.**
-- **Smart Worker (`smart-worker`)** — high-capability open-source models (Kimi, DeepSeek) via OpenRouter. Use for complex implementation tasks when budget is an issue.
+Analyze the task complexity from 1 to 5 and pick the corresponding worker:
 
-**The Mechanical Check (Internal Step)**:
-Before selecting a worker, ask: "Can this task be completed by a model that follows instructions and performs edits, without needing high-level design approval?"
-- If **Yes** → pick `opencode`.
-- If **Maybe** → pick `opencode`.
-- If **No** (e.g. brainstorming, PR review classification, core design decisions) → pick `claude`.
+- **L5 (Critical) — `claude`**: Architecture, vague specs, core logic refactors, or "impossible" bugs where reasoning > throughput.
+- **L4 (Expert) — `codex`**: High-speed implementation of complex but well-defined technical plans. Prefers GPT-5.3.
+- **L3 (Standard) — `gemini`**: Large-context tasks, whole-repo migrations, or documentation where context window is the primary constraint.
+- **L2 (Efficiency) — `opencode`**: Unit tests, boilerplate, isolated utility functions, or mechanical refactors.
+- **L1 (Mechanical) — `smart-worker`**: Simple formatting, lint fixes, or trivial documentation updates.
 
-**Budget-Aware Routing**:
-If `budget_status` is **low**, aggressively prioritize `smart-worker` or `gemini` for all tasks. Reserve `claude` strictly for critical architectural decisions or when explicitly requested by the user.
+**The Complexity Check**:
+1.  **Complexity 1-2**: Is it repetitive, well-documented, or local to one file?
+2.  **Complexity 3-4**: Does it require understanding multiple files, API contracts, or high-performance implementation?
+3.  **Complexity 5**: Does it require trade-off analysis, architectural changes, or fixing "ghost" bugs?
 
-When routing for **round-3 escalation**, prefer a worker whose strength is *different* from the one that just failed. Claude failed → try OpenCode or Smart Worker. OpenCode failed → try Claude or Gemini. Skip any worker in the `exclude` list.
+**Budget-Aware & Exploration**:
+- If `budget_status` is **low**, downgrade the worker by one tier (e.g., L4 -> L3) unless it's a Complexity 5 task.
+- For **round-3 escalation**, move UP one tier or pick a worker from the same tier with a different model family. Skip any worker in the `exclude` list.
 
 ## Output format (strict)
 
-Return exactly three lines, in this order, with these labels — the orchestrator parses them with a simple regex:
+Return exactly four fields, in this order, with these labels:
 
 ```
-worker: <claude|opencode|gemini>
+complexity: <1-5>
+worker: <claude|codex|gemini|opencode|smart-worker>
 rationale: <one sentence, ≤25 words>
 prompt: <the task prompt rewritten for the chosen worker, can span multiple lines>
 ```
 
-The `prompt` field is the rest of the message after the `prompt:` line. Make it self-contained: the worker won't see the original task, only your rewritten version. Include file paths, exact behaviors expected, and any constraints from the original task. Do **not** include "you are a worker for the orchestrator" framing — workers don't need it.
+The `prompt` field is the rest of the message after the `prompt:` line. Make it self-contained: the worker won't see the original task, only your rewritten version. Include file paths, exact behaviors expected, and any constraints from the original task. Do **not** include "you are a worker for the orchestrator" framing.
 
 ## Failure mode
 
 If the task is too underspecified to route confidently, return:
 
 ```
+complexity: 5
 worker: claude
 rationale: task underspecified, defer to Claude for clarification
 prompt: <the original task verbatim>

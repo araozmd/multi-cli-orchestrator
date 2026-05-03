@@ -7,11 +7,13 @@ This project is a distribution kit for AI agent skills and subagents, designed t
 The orchestrator operates as a pipeline across three main skills:
 
 1.  **`start-feature`**: The entry point. It brainstorms a spec with the user, generates a test plan (Codex checklist), and opens a draft PR.
-2.  **`route-task`**: Decides which CLI worker should handle a task based on its type:
-    *   **Gemini CLI**: Large-context (full-repo reads, summaries, doc generation).
-    *   **OpenCode**: Mechanical implementation (default for technical work: refactors, scaffolding, parallel tasks). Uses `openai/gpt-5.3-codex` by default.
-    *   **Smart Worker**: High-capability open-source models (Kimi k2, DeepSeek v3.1) via OpenRouter.
-    *   **Claude Code (self)**: Judgment, architecture, and post-review fixes.
+2.  **`route-task`**: Decides which CLI worker should handle a task based on its **Complexity Score (1-5)**:
+    *   **L5 (Critical) — Claude Code**: Architecture, vague specs, "impossible" bugs. Reasoning > Throughput.
+    *   **L4 (Expert) — Codex**: High-speed implementation of complex technical plans. Uses GPT-5.3.
+    *   **L3 (Standard) — Gemini CLI**: Large-context (full-repo reads, summaries, doc generation).
+    *   **L2 (Efficiency) — OpenCode**: Mechanical implementation (unit tests, boilerplate). Uses DeepSeek V4 Pro.
+    *   **L1 (Mechanical) — Smart Worker**: High-throughput/low-cost models (Kimi, Qwen) for trivial tasks.
+    *   **Performance-Aware Routing**: Every task generates a telemetry entry in `.mco-cache/metrics.json` tracking Success Rate, Time, and Cost.
 3.  **`pr-loop`**: Drives an autonomous Codex PR review cycle. It classifies comments by severity (P0/P1 block; P2/nits ignore), applies fixes, and escalates to different workers if needed (Round 3).
 
 ### Key Components & Scripts
