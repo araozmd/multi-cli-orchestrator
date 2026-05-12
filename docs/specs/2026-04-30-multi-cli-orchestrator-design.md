@@ -20,7 +20,7 @@ Reduce token pressure on Claude Code by routing implementation work to specializ
 | Decision | Choice | Rationale |
 |---|---|---|
 | A2A vs. pragmatic | **Pragmatic, A2A-curious** | Claude Code, Codex CLI, and Gemini CLI don't natively expose A2A endpoints. Community wrappers are alpha. CLI + MCP + GitHub gets to a working loop in days; A2A wrapping costs 1–2 weeks for capabilities a 3-worker setup doesn't yet need. Worker invocations go through a single `invoke-worker.sh` chokepoint so swapping in A2A later is a one-file change. |
-| Merge gates | **Strict auto-merge** | All of: CI green, tests green, typecheck green, lint green, zero unresolved P0/P1 Codex comments, branch protection enforced. No human-button merge. Strict gates are the safety net, not a human checkpoint. |
+| Merge gates | **Strict auto-merge** | All of: CI green, tests green, typecheck green, lint green, zero unresolved P0/P1 Codex comments, branch protection enforced. `pr-loop` runs `gh pr merge` automatically when gates pass. Strict gates are the safety net, not a human checkpoint. |
 | Worker routing | **Task-typed (encoded rules)** | Gemini → large-context; OpenCode → mechanical (default for technical work); Claude → architecture / ambiguity / post-review fixes. Rules live in the `route-task` skill so they are debuggable and tunable in one place. |
 | Loop failure mode | **Escalation ladder, 4 rounds max** | Rounds 1–2: Claude fixes via `pr-fixer` subagent. Round 3: route the failing fix to a different worker (different model, different perspective) — uses the multi-CLI setup as a recovery mechanism. Round 4: label `needs-human`, stop, ping the user. Stall detection: if the same P0/P1 comment reappears two rounds in a row, skip ahead to round 3. |
 | Merge strategy | **Merge or Squash** | Default is `merge`. If `squash` is selected via `MCO_MERGE_STRATEGY`, Codex generates a high-signal commit summary message before the PR is marked ready to merge. |
@@ -119,9 +119,8 @@ You ─────────────────► Claude Code (orchestr
 
 | Phase | Scope | Exit criteria |
 |---|---|---|
-| **Phase 1 — manual supervision** | One trivial PR (doc fix or simple refactor). User watches every step. No auto-merge. | One PR completes the full loop without intervention. |
-| **Phase 2 — soft auto-merge** | 2–3 real feature PRs. Auto-merge enabled, but user reviews each merge before pulling main. | 3 consecutive PRs merge cleanly. |
-| **Phase 3 — full auto-merge** | All PRs from `/start-feature` go through the loop unattended. | Stable. |
+| **Phase 1 — supervised auto-merge** | One trivial PR (doc fix or simple refactor). User watches every step. Auto-merge is on but user sanity-checks each merge before pulling main. | One PR completes the full loop without intervention. |
+| **Phase 2 — full auto-merge** | All PRs from `/start-feature` go through the loop unattended. | Stable. |
 | **Phase 4 (optional) — A2A wrapping** | Wrap one worker (start with OpenCode) as an A2A agent behind `invoke-worker.sh`. Validate the seam. | Workflow unchanged after the swap. |
 
 ## Distribution

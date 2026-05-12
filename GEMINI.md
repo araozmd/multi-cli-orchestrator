@@ -1,6 +1,6 @@
 # Multi-CLI Orchestrator — GEMINI.md
 
-This project is a distribution kit for AI agent skills and subagents, designed to orchestrate multiple LLM-powered CLIs. It enables Claude Code to act as a design-focused orchestrator that routes implementation tasks to specialized workers (Gemini, OpenCode) and automates the PR review cycle via Codex.
+This project is a distribution kit for AI agent skills and subagents, designed to orchestrate multiple LLM-powered CLIs. It enables Claude Code to act as a design-focused orchestrator that routes implementation tasks to specialized workers (Codex, Gemini, OpenCode) and automates the PR review cycle via Codex. Auto-merge is active — when all gates pass, the PR is merged automatically.
 
 ## Core Architecture
 
@@ -9,7 +9,7 @@ The orchestrator operates as a pipeline across three main skills:
 1.  **`start-feature`**: The entry point. It brainstorms a spec with the user, generates a test plan (Codex checklist), and opens a draft PR.
 2.  **`route-task`**: Decides which CLI worker should handle a task based on its **Complexity Score (1-5)**:
     *   **L5 (Critical) — Claude Code**: Architecture, vague specs, "impossible" bugs. Reasoning > Throughput.
-    *   **L4 (Expert) — Codex**: High-speed implementation of complex technical plans. Uses GPT-5.3.
+    *   **L4 (Expert) — Codex**: High-speed implementation of complex technical plans. Uses native `codex exec` CLI (Plus subscription).
     *   **L3 (Standard) — Gemini CLI**: Large-context (full-repo reads, summaries, doc generation).
     *   **L2 (Efficiency) — OpenCode**: Mechanical implementation (unit tests, boilerplate). Uses DeepSeek V4 Pro.
     *   **L1 (Mechanical) — Smart Worker**: High-throughput/low-cost models (Kimi, Qwen) for trivial tasks.

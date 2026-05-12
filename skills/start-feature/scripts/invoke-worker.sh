@@ -72,13 +72,8 @@ case "$WORKER" in
     CMD=(npx -y @anthropic-ai/claude-code --dangerously-skip-permissions -p "$PROMPT")
     ;;
   codex)
-    # L4 (Expert) — High-speed implementation (GPT-5.3)
-    CMD=(opencode --pure run --dangerously-skip-permissions -m "openai/gpt-5.3-codex" "$PROMPT")
-    if ! run_opencode_cmd "${CMD[@]}"; then
-      [[ $? -eq 126 ]] && exec "$0" "smart-worker" "$PROMPT_FILE" "$LOG_DIR"
-      exit $?
-    fi
-    exit 0
+    # L4 (Expert) — High-speed implementation via native Codex CLI (uses Plus subscription)
+    CMD=(codex exec --dangerously-bypass-approvals-and-sandbox "$PROMPT")
     ;;
   opencode)
     # L2 (Efficiency) — Default technical work (DeepSeek V4 Pro)

@@ -1,13 +1,13 @@
 ---
 name: pr-loop
-description: Drive the Codex review cycle on an open PR. Polls Codex comments, classifies severity (P0/P1 blocking, P2/nit ignored), applies fixes via subagent or escalates to a different worker on round 3, labels needs-human and stops on round 4. In Phase 1 stops at "ready to merge"; Phase 2 will auto-merge.
+description: Drive the Codex review cycle on an open PR. Polls Codex comments, classifies severity (P0/P1 blocking, P2/nit ignored), applies fixes via subagent or escalates to a different worker on round 3, labels needs-human and stops on round 4. Auto-merges when all gates are green.
 ---
 
 # pr-loop
 
 Drives the Codex review cycle on an open PR until either all gates are green or the round cap is hit.
 
-> **Phase 1 (current):** stops at "ready to merge" — the human clicks merge. Phase 2 flips on auto-merge.
+> **Auto-merge enabled.** When all gates are green, the orchestrator merges the PR automatically.
 
 ## Inputs
 
@@ -127,20 +127,26 @@ multi-cli-orchestrator: all gates green ✅
 
 Handover summary:
 - Rounds run: <n>
-- Worker totals: claude=<a>, opencode=<b>, gemini=<c>
+- Worker totals: claude=<a>, opencode=<b>, gemini=<c>, codex=<d>
 - Round-by-round:
   • round-0: <worker> (implementation)
   • round-1: claude (fix x<count>)
   • ...
 - Blocking comments resolved: <count>
 - Cache: .mco-cache/<pr>/
-
-Merge Logic:
-- If MCO_MERGE_STRATEGY=merge: "Phase 1 mode: human merges. Click 'Merge pull request' to land."
-- If MCO_MERGE_STRATEGY=squash: "Phase 1 mode: human merges. **Instruction:** Use 'Squash and merge' with the message generated below." (Append the content of squash-message.txt).
 ```
 
-> **Phase 2 (future):** The orchestrator will run `gh pr merge --squash --body-file .mco-cache/<pr>/squash-message.txt` automatically.
+Then auto-merge:
+
+```bash
+if [[ "${MCO_MERGE_STRATEGY:-merge}" == "squash" ]]; then
+  gh pr merge "$pr_number" --squash --body-file ".mco-cache/$pr_number/squash-message.txt"
+else
+  gh pr merge "$pr_number" --merge
+fi
+```
+
+If `gh pr merge` fails (e.g. branch protection race, required review not yet registered), retry once after 30s. If it still fails, fall back to labeling `needs-human` and posting the error.
 
 Return success to the caller (`start-feature`). The caller is responsible for clearing `.mco-cache/_lock`.
 

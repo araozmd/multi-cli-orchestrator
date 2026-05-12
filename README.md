@@ -18,7 +18,7 @@ The result: token pressure on Claude drops, PRs get a second pair of eyes for fr
 
 ## Status
 
-`v0.1.5` — Phase 1 functional. Core skills and subagents implemented. Human-button merge by default; squash-merge supported with Codex journey summaries.
+`v0.2.0` — Auto-merge enabled. Core skills and subagents implemented. When all gates are green, `pr-loop` auto-merges via `gh pr merge`. Squash-merge supported with Codex journey summaries (`MCO_MERGE_STRATEGY=squash`).
 
 ## Prerequisites
 
@@ -26,7 +26,7 @@ The result: token pressure on Claude drops, PRs get a second pair of eyes for fr
 - Node 18+ (for `npx skills`)
 - GitHub CLI (`gh`) authenticated against the repo you want to orchestrate
 - Claude Code CLI (the orchestrator)
-- At least one worker CLI: `codex`, `opencode`, or `gemini`
+- At least one worker CLI: `codex` (Plus subscription), `opencode`, or `gemini`
 - A repo with branch protection on `main` (the strict-merge gates assume it)
 
 ## Install
@@ -171,9 +171,8 @@ If something goes sideways — Codex never approves, fix loop stalls, token budg
 
 This kit is designed to earn trust gradually. The recommended path:
 
-1. **Phase 1 — manual supervision.** Start with one trivial PR (doc fix). Watch every step. Auto-merge off.
-2. **Phase 2 — soft auto-merge.** 2–3 real PRs. Auto-merge on, but you sanity-check each merge before pulling `main`.
-3. **Phase 3 — full auto-merge.** Every `/start-feature` runs unattended.
+1. **Phase 1 — supervised auto-merge.** Start with one trivial PR (doc fix). Watch every step. Auto-merge is on but you sanity-check each merge before pulling `main`.
+2. **Phase 2 — full auto-merge.** Every `/start-feature` runs unattended.
 4. **Phase 4 (optional) — A2A.** Wrap a worker as an A2A agent behind `invoke-worker.sh`. The seam is designed for this swap.
 
 Don't skip phases.
