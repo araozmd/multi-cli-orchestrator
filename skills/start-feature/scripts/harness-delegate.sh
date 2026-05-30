@@ -63,12 +63,18 @@ ROUND0="$WORKDIR/round-0"
 mkdir -p "$ROUND0"
 
 # ── Concurrency lock (sequential invariant) ───────────────────────────────────
-# Phase 1 is strictly sequential — one feature in flight at a time.
+# Phase 1 is strictly sequential — one feature in flight at a time. Claim the
+# lock ATOMICALLY before STAGE 1 (the worker runs for minutes; a check-now/
+# write-later split is a TOCTOU race that lets two delegates share a worktree).
+# noclobber makes the check-and-create one indivisible step. Dry-run stays lock-free.
 LOCK="$CACHE_ROOT/_lock"
-if [[ "$DRY" != "1" && -f "$LOCK" ]]; then
-  echo "error: another feature is in flight ($(cat "$LOCK" 2>/dev/null | tr '\n' ' '))." >&2
-  echo "       finish/abort it, or force-clear with: rm $LOCK" >&2
-  exit 3
+if [[ "$DRY" != "1" ]]; then
+  if ! ( set -o noclobber; : > "$LOCK" ) 2>/dev/null; then
+    echo "error: another feature is in flight ($(tr '\n' ' ' < "$LOCK" 2>/dev/null))." >&2
+    echo "       finish/abort it, or force-clear with: rm $LOCK" >&2
+    exit 3
+  fi
+  printf 'feature=%s\nworker=%s\n' "$FEATURE_ID" "$WORKER" > "$LOCK"
 fi
 
 # ── STAGE 1: assemble spec → worker ───────────────────────────────────────────
@@ -107,6 +113,8 @@ rc=0
 bash "$INVOKE_WORKER" "$WORKER" "$PROMPT_FILE" "$ROUND0" || rc=$?
 if [[ "$rc" -ne 0 ]]; then
   echo "✗ worker '$WORKER' failed (rc=$rc); not opening a PR. See $ROUND0/." >&2
+  # No PR was opened — release the lock so a failed run doesn't block the next feature.
+  [[ "$DRY" != "1" ]] && rm -f "$LOCK"
   exit "$rc"
 fi
 
@@ -138,8 +146,8 @@ if [[ "$DRY" == "1" ]]; then
   echo "DRY RUN: gh pr create --draft --title $(printf '%q' "$PR_TITLE") --body-file $(printf '%q' "$PR_BODY_FILE")"
   PR_NUMBER="DRYRUN"
 else
-  # Sequential lock now that we're committing to a real PR.
-  { echo "branch=$BRANCH"; } > "$LOCK"
+  # Lock was already claimed before STAGE 1; append PR provenance (don't clobber).
+  { echo "branch=$BRANCH"; } >> "$LOCK"
   PR_URL="$(gh pr create --draft --title "$PR_TITLE" --body-file "$PR_BODY_FILE")"
   PR_NUMBER="$(echo "$PR_URL" | grep -oE '[0-9]+$')"
   # Relocate cache to the PR-keyed layout pr-loop reads (.mco-cache/<pr>/round-0/).
