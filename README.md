@@ -144,6 +144,63 @@ The two CLIs need different frontmatter (Claude Code uses `name:` as the agent i
 
 All worker calls go through [`skills/start-feature/scripts/invoke-worker.sh`](skills/start-feature/scripts/invoke-worker.sh). Today it shells out to `claude` / `opencode` / `gemini` with the right headless-approval flags. Future: drop-in for an A2A client wrapper. Keep the signature stable. After `npx skills update` it lives at `~/.agents/skills/start-feature/scripts/invoke-worker.sh`; the orchestrator skills resolve it via `${MCO_SKILL_ROOT:-$HOME/.agents/skills/start-feature}/scripts/invoke-worker.sh`.
 
+## Optional: drive it from the SDD harness
+
+This kit pairs with [`harness-sdd`](https://github.com/araozmd/harness-sdd) — a portable
+Spec-Driven-Development harness (Orchestrator → Architect → Builder → Reviewer). The two
+are independent: the harness runs fine on a single CLI, and this kit runs fine on its own
+via `/start-feature`. When both are present, the harness can use this kit as its
+**implementation engine** — the dependency points *down* (the harness never learns this
+kit exists; this kit plugs into the harness's one extension point).
+
+The seam is the harness's `execution.builder` backend. Opt in:
+
+```yaml
+# .harness/harness.config.yaml
+execution:
+  builder:
+    backend: delegate
+    delegate_cmd: "bash skills/start-feature/scripts/harness-delegate.sh"
+```
+
+Now the harness Builder phase doesn't write code — it calls
+[`harness-delegate.sh`](skills/start-feature/scripts/harness-delegate.sh)
+`<feature-id> <abs-spec-path>`, which:
+
+1. **assembles** the feature's 4-file spec (`.spec`/`.plan`/`.tasks`/`.tests`) into one
+   prompt and runs the chosen worker via `invoke-worker.sh` (round-0 implementation);
+2. **commits** the result on a branch and opens a **draft** PR whose body carries the
+   spec + test plan (the Codex review checklist), then emits a
+   `MCO_DELEGATE_RESULT … pr=<n>` handoff line and stops.
+
+The draft state is deliberate — it's what gates auto-merge behind the **local review**.
+The full delegated flow, end to end:
+
+```
+harness: Architect → (human gate) → Builder[delegate]
+                                        │
+                         harness-delegate.sh  (worker → commit → draft PR)
+                                        │
+            harness Reviewer (LOCAL, pre-merge gate)  ──reject──► back to Builder
+                                        │ approve
+                              pr-loop skill (gh pr ready → @codex review)
+                                        │ all gates green
+                                   auto-merge → feature `done`
+```
+
+Both reviewers run, in order: the **local harness Reviewer** verifies spec-conformance on
+the branch *before* the PR is readied, then **Codex** gates on the PR. Auto-merge cannot
+race the local review because the PR stays draft until local approval.
+
+Worker selection defaults to `claude`; override per-run with `MCO_WORKER`, or let
+`route-task` choose in the full pipeline. `MCO_DRY_RUN=1` exercises the whole bridge
+(prompt assembly + the exact CLI/git/`gh` commands) without spending tokens or opening a
+PR.
+
+> **Status:** the bridge implements STAGE 1 (spec → worker) and STAGE 2 (commit → draft
+> PR). The local-Reviewer → `pr-loop` → merge handoff is agent-driven (the harness
+> Orchestrator routes it); the bridge hands back the PR number for that next step.
+
 ## How to use it
 
 The everyday flow is one command:
@@ -198,11 +255,6 @@ Don't skip phases.
 - [Vercel `skills` CLI](https://github.com/vercel-labs/skills) — distribution.
 - [A2A protocol](https://a2a-protocol.org/) — deferred; Phase 4 candidate.
 - [obra/superpowers](https://github.com/obra/superpowers) — distribution-pattern reference.
-
-## License
-
-MIT — see [LICENSE](LICENSE).
-bra/superpowers) — distribution-pattern reference.
 
 ## License
 

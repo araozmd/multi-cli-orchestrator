@@ -50,3 +50,15 @@ No build/test/lint — this is a distribution kit, not an app. Consumer-facing c
 - `MCO_DRY_RUN=1 bash ~/.agents/skills/start-feature/scripts/invoke-worker.sh <claude|opencode|gemini> <prompt-file>` — exercise the worker chokepoint without spending tokens.
 
 The `pr-loop` skill itself shells out to `gh` (`gh pr view`, `gh pr comment`, `gh pr ready`, `gh pr edit`, `gh pr merge`). When all gates are green, it auto-merges via `gh pr merge`.
+
+<!-- harness:begin -->
+## Agent Harness (Spec-Driven Development)
+This project uses a portable agent harness installed in `.harness/`.
+Start every agent session as the **Orchestrator**:
+1. Run `.harness/init.sh` — if it exits non-zero, STOP.
+2. Read `.harness/AGENTS.md` (the harness source of truth) and resolve its
+   relative paths against `.harness/` (config, agents/, specs/, state/, store/,
+   docs/, progress/).
+3. Product/source code lives at the repo root; harness bookkeeping lives in
+   `.harness/`. In Claude Code, run `/sdd-next`.
+<!-- harness:end -->

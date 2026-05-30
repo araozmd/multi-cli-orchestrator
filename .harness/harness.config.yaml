@@ -1,0 +1,48 @@
+# harness-sdd configuration
+# The agents read this once (after init.sh) to learn HOW to read/write state.
+# Swapping a backend value changes where memory lives WITHOUT changing any prompt.
+
+store:
+  # TaskStore: high-level epic/feature/task state the Orchestrator reads.
+  #   local    -> state/tasks.json            (default, zero deps)
+  #   obsidian -> specs/ markdown frontmatter (graph view, backlinks)
+  #   jira     -> Atlassian via MCP           (STUBBED — see store/jira.md)
+  tasks: local
+
+  # DocStore: the externalized memory — specs, progress, history.
+  #   local    -> markdown files in specs/ and progress/
+  #   obsidian -> same files, Obsidian-flavored (wikilinks + frontmatter)
+  docs: local
+
+workflow:
+  # Human-in-the-loop gate. When true, a feature pauses at `spec-ready` until a
+  # human moves it to `in-progress`. Individual tasks can opt out via `sdd: false`
+  # or `autonomous: true` in their frontmatter / TaskStore entry.
+  require_spec_approval: true
+
+  # Context hygiene: agents should reset context when their window passes this
+  # fraction full, handing off via progress/ files. Degradation starts ~0.20.
+  context_reset_threshold: 0.40
+
+execution:
+  # This repo IS the multi-CLI executor, so it opts the Builder phase into
+  # delegation. Only the Builder is delegatable; Orchestrator/Architect/Reviewer/
+  # Scout always run in the host code-agent. See the upstream harness config for
+  # the full contract.
+  builder:
+    backend: delegate
+    # Bridge: assembles the feature's 4-file spec → invoke-worker.sh chokepoint.
+    # Invoked as `<delegate_cmd> <feature-id> <abs-spec-path>` from the repo root.
+    delegate_cmd: "bash skills/start-feature/scripts/harness-delegate.sh"
+
+verification:
+  init_script: ./init.sh
+  # Commands the Reviewer must run before marking work done. Project-specific —
+  # edit these per target repo.
+  # No build/test/lint in the app sense — this is a distribution kit. The shipped
+  # runtime artifacts are shell scripts, so "tests" = bash syntax check on them.
+  test_command: "bash -n skills/start-feature/scripts/invoke-worker.sh skills/start-feature/scripts/install-agents.sh skills/start-feature/scripts/harness-delegate.sh"
+
+  # shellcheck (0.11.0) lints the shipped runtime scripts at full default severity.
+  lint_command: "shellcheck skills/start-feature/scripts/invoke-worker.sh skills/start-feature/scripts/install-agents.sh skills/start-feature/scripts/harness-delegate.sh"
+  typecheck_command: ""   # not applicable — no typed source
