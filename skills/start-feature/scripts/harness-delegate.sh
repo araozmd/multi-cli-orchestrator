@@ -68,6 +68,16 @@ mkdir -p "$ROUND0"
 # write-later split is a TOCTOU race that lets two delegates share a worktree).
 # noclobber makes the check-and-create one indivisible step. Dry-run stays lock-free.
 LOCK="$CACHE_ROOT/_lock"
+LOCK_HELD=0       # 1 once we atomically own .mco-cache/_lock
+LOCK_COMMITTED=0  # 1 once a PR handoff is fully recorded (lock should persist)
+# shellcheck disable=SC2329  # invoked indirectly via `trap ... EXIT`
+release_lock_on_fail() {
+  # Release the lock unless a PR was successfully handed off. Dry-run never holds it.
+  if [[ "$DRY" != "1" && "$LOCK_HELD" == "1" && "$LOCK_COMMITTED" != "1" ]]; then
+    rm -f "$LOCK"
+  fi
+}
+trap release_lock_on_fail EXIT
 if [[ "$DRY" != "1" ]]; then
   if ! ( set -o noclobber; : > "$LOCK" ) 2>/dev/null; then
     echo "error: another feature is in flight ($(tr '\n' ' ' < "$LOCK" 2>/dev/null))." >&2
@@ -75,6 +85,7 @@ if [[ "$DRY" != "1" ]]; then
     exit 3
   fi
   printf 'feature=%s\nworker=%s\n' "$FEATURE_ID" "$WORKER" > "$LOCK"
+  LOCK_HELD=1
 fi
 
 # ── STAGE 1: assemble spec → worker ───────────────────────────────────────────
@@ -113,8 +124,7 @@ rc=0
 bash "$INVOKE_WORKER" "$WORKER" "$PROMPT_FILE" "$ROUND0" || rc=$?
 if [[ "$rc" -ne 0 ]]; then
   echo "✗ worker '$WORKER' failed (rc=$rc); not opening a PR. See $ROUND0/." >&2
-  # No PR was opened — release the lock so a failed run doesn't block the next feature.
-  [[ "$DRY" != "1" ]] && rm -f "$LOCK"
+  # No PR was opened — the EXIT trap releases the lock so a failed run doesn't block the next feature.
   exit "$rc"
 fi
 
@@ -156,6 +166,8 @@ else
     WORKDIR="$CACHE_ROOT/$PR_NUMBER"
   fi
   { echo "pr=$PR_NUMBER"; echo "url=$PR_URL"; } >> "$LOCK"
+  # PR is open and recorded — the handoff is complete; preserve the lock past EXIT.
+  LOCK_COMMITTED=1
   echo "→ opened draft PR #$PR_NUMBER — $PR_URL" >&2
 fi
 
