@@ -83,7 +83,10 @@ You ─────────────────► Claude Code (orchestr
 6. start-feature → pr-loop: drive review cycle
 7. pr-loop:
    - trigger Codex review (@codex review)
-   - poll gh pr view for review completion
+   - wait for review via background watcher (scripts/wait-for-codex.sh,
+     run_in_background) — polls the 3 sources every MCO_POLL_INTERVAL (60s)
+     up to MCO_POLL_CEILING (900s) and re-invokes the session on landing/timeout.
+     Never poll gh by hand: the turn ends before the review lands.
    - parse comments, classify severity
    - if blocking comments exist:
        round 1–2: spawn pr-fixer per comment, push fix commits
