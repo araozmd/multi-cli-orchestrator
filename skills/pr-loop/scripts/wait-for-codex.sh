@@ -52,8 +52,9 @@ read -r owner repo < <(gh repo view --json owner,name --jq '"\(.owner.login) \(.
 fetch_sources() {
   gh pr view "$PR_NUMBER" --json reviews,comments,statusCheckRollup,headRefOid \
     > "$ROUND_DIR/pr.json" 2>/dev/null || return 1
-  gh api "repos/$owner/$repo/pulls/$PR_NUMBER/comments" --paginate \
-    > "$ROUND_DIR/review-comments.json" 2>/dev/null || echo '[]' > "$ROUND_DIR/review-comments.json"
+  gh api "repos/$owner/$repo/pulls/$PR_NUMBER/comments" --paginate --slurp 2>/dev/null \
+    | jq 'add // []' > "$ROUND_DIR/review-comments.json" \
+    || echo '[]' > "$ROUND_DIR/review-comments.json"
   if [[ -n "$TRIGGER_COMMENT_ID" ]]; then
     gh api "repos/$owner/$repo/issues/comments/$TRIGGER_COMMENT_ID/reactions" \
       > "$ROUND_DIR/reactions.json" 2>/dev/null || echo '[]' > "$ROUND_DIR/reactions.json"

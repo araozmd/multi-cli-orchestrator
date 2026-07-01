@@ -53,7 +53,7 @@ bash ~/.agents/skills/pr-loop/scripts/wait-for-codex.sh \
 The watcher polls every `MCO_POLL_INTERVAL` seconds (default **60** — minute-by-minute) up to `MCO_POLL_CEILING` (default **900** = 15 min). It writes the **three sources** into `$round_dir` on each poll (`gh pr view` alone does NOT return Codex's findings):
 
 - `pr.json` — `gh pr view --json reviews,comments,statusCheckRollup,headRefOid` (summary, checks, head oid)
-- `review-comments.json` — `gh api repos/<o>/<r>/pulls/<n>/comments --paginate` — **the inline findings**, anchored to file/line. Returned by **neither** `--json comments` (issue comments only) **nor** `reviews[*].body` (summary banner only).
+- `review-comments.json` — `gh api repos/<o>/<r>/pulls/<n>/comments --paginate --slurp` flattened to one array — **the inline findings**, anchored to file/line. Returned by **neither** `--json comments` (issue comments only) **nor** `reviews[*].body` (summary banner only). `--slurp` is required so paginated REST results remain parseable when more than one page is returned.
 - `reactions.json` — reactions on the `@codex review` comment (Codex reacts 👍 when it has nothing).
 
 When the watcher exits, the harness re-invokes you. **Branch on its exit code** — do not re-poll:
