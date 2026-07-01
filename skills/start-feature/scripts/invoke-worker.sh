@@ -5,7 +5,7 @@
 # Future: drop-in replacement for an A2A client wrapper. Keep the signature stable.
 #
 # Usage: invoke-worker.sh <worker> <prompt-file> [log-dir]
-#   worker:      claude | codex | gemini | opencode | smart-worker
+#   worker:      claude | codex | gemini | opencode | smart-worker | agy
 #   prompt-file: path to a file containing the task prompt
 #   log-dir:     optional directory; if set, stdout/stderr captured to <log-dir>/<worker>.{out,err}
 #
@@ -19,7 +19,7 @@ PROMPT_FILE="${2:-}"
 LOG_DIR="${3:-}"
 
 if [[ -z "$WORKER" || -z "$PROMPT_FILE" ]]; then
-  echo "usage: $0 <claude|codex|gemini|opencode|smart-worker> <prompt-file> [log-dir]" >&2
+  echo "usage: $0 <claude|codex|gemini|opencode|smart-worker|agy> <prompt-file> [log-dir]" >&2
   exit 2
 fi
 
@@ -86,6 +86,9 @@ case "$WORKER" in
     ;;
   gemini)
     CMD=(gemini --approval-mode yolo -p "$PROMPT")
+    ;;
+  agy)
+    CMD=(agy --dangerously-skip-permissions -p "$PROMPT")
     ;;
   smart-worker)
     # L1 (Mechanical) — Budget-aware throughput tier.

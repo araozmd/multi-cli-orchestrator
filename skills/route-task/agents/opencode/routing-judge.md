@@ -22,7 +22,7 @@ Analyze the task complexity from 1 to 5 and pick the corresponding worker:
 
 - **L5 (Critical) — `claude`**: Architecture, vague specs, core logic refactors, or "impossible" bugs where reasoning > throughput.
 - **L4 (Expert) — `codex`**: High-speed implementation of complex but well-defined technical plans. Prefers GPT-5.3.
-- **L3 (Standard) — `gemini`**: Large-context tasks, whole-repo migrations, or documentation where context window is the primary constraint.
+- **L3 (Standard) — `gemini` / `agy`**: Large-context tasks, whole-repo migrations, or documentation where context window is the primary constraint.
 - **L2 (Efficiency) — `opencode`**: Unit tests, boilerplate, isolated utility functions, or mechanical refactors.
 - **L1 (Mechanical) — `smart-worker`**: Simple formatting, lint fixes, or trivial documentation updates.
 
@@ -41,7 +41,7 @@ Return exactly four fields, in this order, with these labels:
 
 ```
 complexity: <1-5>
-worker: <claude|codex|gemini|opencode|smart-worker>
+worker: <claude|codex|gemini|opencode|smart-worker|agy>
 rationale: <one sentence, ≤25 words>
 prompt: <the task prompt rewritten for the chosen worker, can span multiple lines>
 ```

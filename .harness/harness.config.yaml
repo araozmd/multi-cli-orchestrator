@@ -3,6 +3,7 @@
 # Swapping a backend value changes where memory lives WITHOUT changing any prompt.
 
 store:
+  on_write_command: ""   # post-write sync hook; empty ⇒ none (see store/board-mirror.md)
   # TaskStore: high-level epic/feature/task state the Orchestrator reads.
   #   local    -> state/tasks.json            (default, zero deps)
   #   obsidian -> specs/ markdown frontmatter (graph view, backlinks)
@@ -36,6 +37,7 @@ execution:
     delegate_cmd: "bash skills/start-feature/scripts/harness-delegate.sh"
 
 verification:
+  integration_command: ""   # umbrella integration gate (see docs/UMBRELLA.md)
   init_script: ./init.sh
   # Commands the Reviewer must run before marking work done. Project-specific —
   # edit these per target repo.
@@ -46,3 +48,24 @@ verification:
   # shellcheck (0.11.0) lints the shipped runtime scripts at full default severity.
   lint_command: "shellcheck skills/start-feature/scripts/invoke-worker.sh skills/start-feature/scripts/install-agents.sh skills/start-feature/scripts/harness-delegate.sh"
   typecheck_command: ""   # not applicable — no typed source
+
+umbrella:
+  manifest: ""   # path to umbrella.manifest.yaml; presence = umbrella mode
+
+# Telemetry (E05-F02): local-only sub-agent + human-gate timing. See docs/UMBRELLA.md
+# is unrelated; see agents/orchestrator.md "## Telemetry". Absent block ⇒ enabled defaults.
+telemetry:
+  enabled: true            # false ⇒ Orchestrator skips telemetry capture entirely
+  log: telemetry.jsonl     # resolved under HARNESS_DIR; gitignored/local-only
+
+# Board mirror (optional, opt-in): one-way projection of tasks.json onto a project
+# board. INERT by default (empty provider). MIRROR, not a backend. See store/board-mirror.md.
+mirror:
+  board:
+    provider: ""          # ""|none disables; github-projects implemented; jira|azure-boards stubs
+    owner: ""             # github-projects: org/user login
+    project_number: 0     # github-projects: Project number
+    repo: ""              # github-projects: owner/repo holding the issues
+    # status_map:         # optional: harness status -> board column name (omit ⇒ identity)
+    #   pending: "Todo"
+    #   done: "Done"

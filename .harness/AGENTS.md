@@ -4,19 +4,20 @@
 > reads before doing anything. Keep it short — it is loaded into context every
 > session. Detailed rules live in the files it points to.
 >
-> `AGENTS.md` is an open standard. Claude Code, Codex, Gemini CLI and OpenCode all
-> read it (directly or via a one-line pointer). **The model is interchangeable; the
-> harness is not.**
+> `AGENTS.md` is an open standard. Claude Code, Codex, Gemini CLI, OpenCode and
+> Antigravity all read it (directly or via a one-line pointer). **The model is
+> interchangeable; the harness is not.**
 
 ## What this is
 
 A portable **Spec-Driven Development (SDD)** harness. Work flows through four roles
 that each run with a *clean, curated context* and hand off through **files on disk**,
-never through chat history.
+never through chat history. **Inception** is the front door *before* the loop: it
+turns a raw idea into a `pending` TaskStore entry + an intent brief (via `/sdd-new`).
 
 ```
-Orchestrator → Architect → Builder → Reviewer        (Scout assists, read-only)
-   (state)      (specs)     (code)    (verify)
+Inception ─► Orchestrator → Architect → Builder → Reviewer    (Scout assists, read-only)
+ (intake)      (state)       (specs)     (code)    (verify)
 ```
 
 ## The non-negotiable rules
@@ -33,12 +34,16 @@ Orchestrator → Architect → Builder → Reviewer        (Scout assists, read-
 5. **Minimal tools.** Prefer Bash/grep/cat/ls and the file system. Do not invent
    specialized tooling; a lean harness beats an inflated one.
 
+> **Telemetry:** the Orchestrator prints an end-of-session telemetry summary (per-phase
+> durations, build↔review rounds, human-gate latency — text-only, no tokens/USD) when it
+> wraps up; the full instruction lives in `agents/orchestrator.md` "## Telemetry".
+
 ## Where things live
 
 | Path | Purpose |
 |---|---|
 | `harness.config.yaml` | Store backend selection + settings (read this first after init) |
-| `agents/*.md` | The role prompts (Orchestrator, Architect, Builder, Reviewer, Scout) |
+| `agents/*.md` | The role prompts (Inception, Orchestrator, Architect, Builder, Reviewer, Scout) |
 | `specs/product.md` | Layer 0 — product constitution (stable, high-level) |
 | `specs/epics/<E>/<F>/*.md` | The 4-file feature specs (`.spec` `.plan` `.tasks` `.tests`) |
 | `state/tasks.json` | The TaskStore (local backend) — epic/feature/task state |

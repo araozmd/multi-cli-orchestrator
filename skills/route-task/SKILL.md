@@ -1,6 +1,6 @@
 ---
 name: route-task
-description: Decide which CLI worker (Claude, OpenCode, or Gemini) should implement a given task. Routes by task type — large-context to Gemini, mechanical to OpenCode, judgment to Claude. Returns the chosen worker and a short rationale; the caller invokes the worker via the orchestrator's invoke-worker.sh chokepoint.
+description: Decide which CLI worker (Claude, OpenCode, Gemini, or Antigravity) should implement a given task. Routes by task type — large-context to Gemini, mechanical to OpenCode, judgment to Claude. Returns the chosen worker and a short rationale; the caller invokes the worker via the orchestrator's invoke-worker.sh chokepoint.
 ---
 
 # route-task
@@ -13,7 +13,7 @@ Encapsulates the task-type → worker mapping in one place so routing stays debu
 | :--- | :--- | :--- |
 | **L5 (Critical)** | **Claude Code** | Architecture, vague specs, core logic refactors, or "impossible" bugs. |
 | **L4 (Expert)** | **Codex** | High-speed implementation of complex but well-defined technical plans (GPT-5.3). |
-| **L3 (Standard)** | **Gemini CLI** | Large-context: whole-repo migrations, doc generation, second-opinion review. |
+| **L3 (Standard)** | **Gemini CLI / Antigravity (agy)** | Large-context: whole-repo migrations, doc generation, second-opinion review. |
 | **L2 (Efficiency)** | **OpenCode** | Unit tests, boilerplate, utility functions. Uses subscription models. |
 | **L1 (Mechanical)** | **Smart Worker** | Formatting, lint fixes, trivial docs. Lowest cost/highest throughput. |
 
@@ -51,7 +51,7 @@ Expect the subagent to return four fields, parseable from its message:
 
 ```
 complexity: <1-5>
-worker: <claude|codex|gemini|opencode|smart-worker>
+worker: <claude|codex|gemini|opencode|smart-worker|agy>
 rationale: <one sentence>
 prompt: <the task prompt rewritten for the chosen worker>
 ```
@@ -108,4 +108,4 @@ After completion, append the result to `.mco-cache/metrics.json` (initialize if 
 
 ## Subagent
 
-`agents/claude-code/routing-judge.md` and `agents/opencode/routing-judge.md` — same role, two CLI-specific frontmatter variants. Registered as `route-task-routing-judge` after the post-install bootstrap (`~/.agents/skills/start-feature/scripts/install-agents.sh`) runs. Keep both bodies in sync.
+`agents/claude-code/routing-judge.md`, `agents/opencode/routing-judge.md`, `agents/codex/routing-judge.toml`, and `agents/antigravity/routing-judge.md` — same role, CLI-specific native formats. Registered as `route-task-routing-judge` after the post-install bootstrap (`~/.agents/skills/start-feature/scripts/install-agents.sh`) runs. Keep all variants in sync.

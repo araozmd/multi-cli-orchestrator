@@ -55,6 +55,19 @@ try:
 except (ValueError, OSError) as e:
     print("  schema not readable: %s" % e, file=sys.stderr); sys.exit(1)
 
+# Warn-only draft-epic invariant (runs on BOTH validation paths, before the
+# jsonschema branch below sys.exit()s): a `draft` epic is an inception sketch,
+# so its features should still be `pending`. A violation is NOT a validation
+# error — the next() draft gate already neutralizes it — so we warn and continue.
+if isinstance(data, dict):
+    for ep in data.get("epics") or []:
+        if isinstance(ep, dict) and ep.get("status") == "draft":
+            for ft in (ep.get("features") or []):
+                if isinstance(ft, dict) and ft.get("status") != "pending":
+                    print("⚠️  draft epic %s has feature %s with status '%s' (expected 'pending'; "
+                          "the draft gate keeps it unselectable)"
+                          % (ep.get("id"), ft.get("id"), ft.get("status")), file=sys.stderr)
+
 # Prefer the real validator when available; fall back to a built-in structural
 # check that encodes the same invariants so init.sh stays zero-dependency.
 try:
@@ -69,8 +82,9 @@ except ImportError:
     pass
 
 errors = []
-EPIC_STATUS = {"pending", "in-progress", "done"}
+EPIC_STATUS = {"draft", "planned", "pending", "in-progress", "done"}
 FEAT_STATUS = {"pending", "spec-ready", "in-progress", "in-review", "done"}
+SLICE_STATUS = {"pending", "spec-ready", "in-progress", "in-review", "done", "failed"}
 
 def need(obj, key, where):
     if key not in obj:
@@ -130,6 +144,49 @@ else:
                     dep = ft["depends_on"]
                     if not isinstance(dep, list) or not all(isinstance(x, str) for x in dep):
                         errors.append("%s.depends_on: expected array of strings" % fw)
+                # Umbrella mode (optional): mirror the slice checks from the JSON
+                # schema so corrupted cross-repo state is rejected even without
+                # jsonschema installed. Absent `slices` ⇒ single-repo, unaffected.
+                if "slices" in ft:
+                    slices = ft["slices"]
+                    if not isinstance(slices, list):
+                        errors.append("%s.slices: expected array" % fw); slices = []
+                    elif len(slices) == 0:
+                        errors.append("%s.slices: must have at least 1 item (omit the field for single-repo)" % fw)
+                    for si, sl in enumerate(slices):
+                        sw = "%s.slices[%d]" % (fw, si)
+                        if not isinstance(sl, dict):
+                            errors.append("%s: expected object" % sw); continue
+                        for k in ("id", "repo", "status"):
+                            need(sl, k, sw)
+                        if "id" in sl:
+                            if not isinstance(sl["id"], str):
+                                errors.append("%s.id: expected string" % sw)
+                            elif not re.match(r"^E[0-9]+-F[0-9]+@[a-z0-9-]+$", sl["id"]):
+                                errors.append("%s.id %r: must match ^E[0-9]+-F[0-9]+@[a-z0-9-]+$" % (sw, sl["id"]))
+                        if "repo" in sl and not isinstance(sl["repo"], str):
+                            errors.append("%s.repo: expected string" % sw)
+                        if sl.get("status") not in SLICE_STATUS and "status" in sl:
+                            errors.append("%s.status '%s': not one of %s" % (sw, sl["status"], sorted(SLICE_STATUS)))
+                        if "merged" in sl and not isinstance(sl["merged"], bool):
+                            errors.append("%s.merged: expected boolean" % sw)
+                        if "spec_path" in sl and not isinstance(sl["spec_path"], str):
+                            errors.append("%s.spec_path: expected string" % sw)
+                        if "pr" in sl and not isinstance(sl["pr"], str):
+                            errors.append("%s.pr: expected string" % sw)
+                        if "depends_on" in sl:
+                            sdep = sl["depends_on"]
+                            if not isinstance(sdep, list) or not all(isinstance(x, str) for x in sdep):
+                                errors.append("%s.depends_on: expected array of strings" % sw)
+                    # Cross-field: a sliced feature may only be `done` when every slice
+                    # is done AND merged. Guards a hand-edited/partial store from
+                    # dispatching dependents (which gate on the stored feature status).
+                    if ft.get("status") == "done":
+                        for si, sl in enumerate(slices):
+                            if not isinstance(sl, dict):
+                                continue
+                            if sl.get("status") != "done" or sl.get("merged") is not True:
+                                errors.append("%s.slices[%d]: feature is 'done' but slice is not done+merged" % (fw, si))
 
 for e in errors:
     print("  " + e, file=sys.stderr)
@@ -143,13 +200,70 @@ PY
   fi
 fi
 
+# 2b. Umbrella mode (additive, opt-in). Engaged ONLY when harness.config.yaml has a
+#     non-empty `umbrella.manifest` AND that file exists. Inert otherwise, so a
+#     single-repo target is completely unaffected. The check is NON-FATAL: it warns
+#     about manifest repos whose `path` is missing rather than blocking the gate.
+UMBRELLA_MANIFEST="$(sed -n 's/^[[:space:]]*manifest:[[:space:]]*"\{0,1\}\([^"#]*\)"\{0,1\}.*/\1/p' harness.config.yaml 2>/dev/null | head -n1 | sed 's/[[:space:]]*$//')"
+if [ -n "${UMBRELLA_MANIFEST:-}" ] && [ -f "$UMBRELLA_MANIFEST" ]; then
+  if command -v python3 >/dev/null 2>&1; then
+    python3 - "$UMBRELLA_MANIFEST" <<'PY' || true
+import sys, os, re
+path = sys.argv[1]
+base = os.path.dirname(os.path.abspath(path))
+repo = None
+missing = []
+try:
+    with open(path) as f:
+        lines = f.readlines()
+except OSError as e:
+    print("⚠️  umbrella manifest unreadable: %s" % e); sys.exit(0)
+# Minimal YAML read (zero-dep): top-level `repos:` mapping, each repo a 2-space key
+# with a `path:` under it. Good enough to flag missing child-repo paths.
+in_repos = False
+for ln in lines:
+    if re.match(r"^repos:\s*$", ln):
+        in_repos = True; continue
+    if in_repos and re.match(r"^\S", ln):
+        in_repos = False
+    if not in_repos:
+        continue
+    # Repo keys must use the SAME grammar as the slice-id `@<repo>` segment
+    # (^[a-z0-9-]+$). A key with an underscore/uppercase could not be represented
+    # as a canonical slice id `E03-F01@<repo>`, so flag it rather than silently
+    # accepting an undispatchable manifest entry.
+    m = re.match(r"^  ([A-Za-z0-9_-]+):\s*$", ln)
+    if m:
+        repo = m.group(1)
+        if not re.match(r"^[a-z0-9-]+$", repo):
+            print("⚠️  umbrella manifest: repo key '%s' is not a valid slice-id segment "
+                  "(use ^[a-z0-9-]+$ to match '<feature-id>@<repo>')" % repo, file=sys.stderr)
+        continue
+    m = re.match(r"^\s+path:\s*\"?([^\"#\n]+)\"?", ln)
+    if m and repo:
+        p = m.group(1).strip()
+        full = p if os.path.isabs(p) else os.path.join(base, p)
+        if not os.path.exists(full):
+            missing.append((repo, p))
+for r, p in missing:
+    print("⚠️  umbrella manifest: repo '%s' path not found: %s" % (r, p))
+PY
+  fi
+  echo "ℹ️  umbrella mode: manifest present ($UMBRELLA_MANIFEST)"
+fi
+
 # 3. Project-specific checks.
 #    Project-authored gates live in `.harness/init.project.sh` — seeded once by
 #    harness-install.sh and NEVER clobbered on upgrade, unlike THIS file (which is
-#    harness BODY and gets overwritten). Put tests/build/lint/presence checks there
-#    rather than editing this file, or they vanish on the next upgrade. The hook is
-#    sourced from the PROJECT ROOT so `npm test` / `pytest` resolve against the repo,
-#    and it inherits the `fail`/`ok` helpers defined above.
+#    harness BODY and gets overwritten). Put FAST structural/presence/build checks
+#    here (the things that must hold for any agent to safely proceed) rather than
+#    editing this file, or they vanish on the next upgrade.
+#    KEEP IT FAST: init.sh runs before EVERY orchestrator step, so a slow suite here
+#    taxes the whole loop (multiplied across slices in umbrella mode). The heavy test
+#    suite belongs in `verification.test_command`, which the Reviewer runs once at the
+#    `in-review` gate — not here. The hook is sourced from the PROJECT ROOT so
+#    `npm test` / `pytest` resolve against the repo, and it inherits the `fail`/`ok`
+#    helpers defined above.
 cd "$PROJECT_ROOT"
 PROJECT_CHECKS="$HARNESS_DIR/init.project.sh"
 if [ -f "$PROJECT_CHECKS" ]; then

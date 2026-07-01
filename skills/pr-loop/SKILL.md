@@ -98,13 +98,13 @@ Compare `blocking.json` to round `n-1`'s `blocking.json` by comment ID (or, if I
 **Always write the worker file for this round** (so the handover summary is reconstructible from cache):
 
 ```bash
-# rounds 1–2: pr-fixer subagents run in the orchestrator's Claude session
+# rounds 1–2: pr-fixer subagents run in the orchestrator's active session (e.g., claude or agy)
 # round 3: route-task already wrote it; this is a no-op overwrite
 echo "<worker>" > "$round_dir/worker"
 echo "<role>" > "$round_dir/role"  # implementation | fix | escalation
 ```
 
-Use `claude` for rounds 1–2 (pr-fixer is a Claude subagent). Use whatever `route-task` returned for round 3.
+Use the active orchestrator (e.g., `claude` or `agy`) for rounds 1–2 (pr-fixer is a subagent). Use whatever `route-task` returned for round 3.
 
 If the **token / cost cap** (`MCO_TOKEN_BUDGET_USD`) is exceeded at any round, treat it identically to round 4 (label, comment, stop).
 
@@ -196,7 +196,7 @@ Apply the `needs-human` label, post a summary comment using the same handover-su
 
 ## Subagent
 
-`agents/claude-code/pr-fixer.md` and `agents/opencode/pr-fixer.md` — same role, two CLI-specific frontmatter variants. Registered as `pr-loop-pr-fixer` after the post-install bootstrap (`~/.agents/skills/start-feature/scripts/install-agents.sh`) runs. Keep both bodies in sync.
+`agents/claude-code/pr-fixer.md`, `agents/opencode/pr-fixer.md`, `agents/codex/pr-fixer.toml`, and `agents/antigravity/pr-fixer.md` — same role, CLI-specific native formats. Registered as `pr-loop-pr-fixer` after the post-install bootstrap (`~/.agents/skills/start-feature/scripts/install-agents.sh`) runs. Keep all variants in sync.
 
 ## State / cache layout
 

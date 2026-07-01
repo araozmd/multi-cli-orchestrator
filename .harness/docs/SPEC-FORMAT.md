@@ -2,7 +2,7 @@
 
 This is the standard every spec in this harness follows. It is deliberately
 CLI-agnostic and model-agnostic: the same files drive Claude Code, Codex, Gemini
-CLI or OpenCode. Specs are also the project's **living documentation**.
+CLI, OpenCode or Antigravity. Specs are also the project's **living documentation**.
 
 ## The hierarchy: Product → Epic → Feature
 
@@ -11,18 +11,18 @@ specs/
   product.md                         # Layer 0 — constitution: vision, audience,
   glossary.md                        #            domain model, AI features (stable)
   epics/
-    E01-dashboard/
+    E01-example/
       epic.md                        # business brief + feature index + status rollup
-      F01-overview-widgets/
-        overview-widgets.spec.md     # Business / Functional  (EARS acceptance criteria)
-        overview-widgets.plan.md     # Technical / Architecture
-        overview-widgets.tasks.md    # Atomic task checklist
-        overview-widgets.tests.md    # Contract: R-id → verifying test
+      F01-example-feature/
+        example-feature.spec.md      # Business / Functional  (EARS acceptance criteria)
+        example-feature.plan.md      # Technical / Architecture
+        example-feature.tasks.md     # Atomic task checklist
+        example-feature.tests.md     # Contract: R-id → verifying test
 ```
 
 - **Product** = the stable constitution. High-level on purpose — granular detail
   here cascades errors downstream.
-- **Epic** = a shippable area of product value (e.g. *Dashboard*, *Handoff*). Holds
+- **Epic** = a shippable area of product value (e.g. *Onboarding*, *Settings*). Holds
   one or more features and a status rollup.
 - **Feature** = one unit the Builder can implement in a single sprint. It owns the
   four spec files below.
@@ -53,11 +53,11 @@ test**. The five patterns:
 
 | Pattern | Template | Example |
 |---|---|---|
-| **Ubiquitous** | The `<system>` shall `<response>`. | The dashboard shall display the user's display name. |
-| **Event-driven** | **When** `<trigger>`, the `<system>` shall `<response>`. | When the user clicks "Take over", the system shall assign the conversation to that agent. |
-| **State-driven** | **While** `<state>`, the `<system>` shall `<response>`. | While a conversation is bot-handled, the system shall show a "Bot active" badge. |
-| **Unwanted** | **If** `<condition>`, **then** the `<system>` shall `<response>`. | If the handoff API returns 5xx, then the system shall show a retry banner and keep the message queued. |
-| **Optional** | **Where** `<feature>`, the `<system>` shall `<response>`. | Where analytics is enabled, the system shall log a `handoff_started` event. |
+| **Ubiquitous** | The `<system>` shall `<response>`. | The profile page shall display the user's display name. |
+| **Event-driven** | **When** `<trigger>`, the `<system>` shall `<response>`. | When the user clicks "Save", the system shall persist the form. |
+| **State-driven** | **While** `<state>`, the `<system>` shall `<response>`. | While a record is syncing, the system shall show a "Syncing" badge. |
+| **Unwanted** | **If** `<condition>`, **then** the `<system>` shall `<response>`. | If the save API returns 5xx, then the system shall show a retry banner and keep the edit queued. |
+| **Optional** | **Where** `<feature>`, the `<system>` shall `<response>`. | Where analytics is enabled, the system shall log a `record_saved` event. |
 
 Patterns can be combined: *When `<trigger>`, while `<state>`, the `<system>` shall
 `<response>`.*
@@ -71,6 +71,30 @@ Patterns can be combined: *When `<trigger>`, while `<state>`, the `<system>` sha
 - Quantify: "at most 5 notes", "within 2s", not "a few", "fast".
 - Give each a stable id. Never renumber a shipped requirement — append.
 
+## Architecture alignment — cite the ADRs you touch
+
+When the project has been planned (`/sdd-plan` wrote `specs/architecture.md` and ADRs at
+`specs/adr/NNNN-*.md`), every feature `.spec.md` carries a dedicated
+**`## Architecture alignment`** section (it sits between `## Business rules` and
+`## Acceptance criteria (EARS)` — see `specs/_templates/feature.spec.md`). The Architect
+**cites** the architecture decisions the feature **touches**, seeded from the `ADR-NNNN`
+ids the inbox brief already records (the F03-D7 hook). The rule:
+
+- **Cite each touched ADR.** List each `ADR-NNNN` the feature touches, each with a
+  one-line "how this feature honors that decision".
+- **`ADRs touched: none`** — when architecture artifacts exist but the feature genuinely
+  touches **no** recorded decision, the section still appears and records the explicit line
+  `ADRs touched: none` with a one-line why. It is a legitimate state, **not** a silent
+  omission — which is what lets the Reviewer tell "touches none" from "forgot".
+- **Divergence** — when a feature must intentionally depart from an ADR, state the
+  divergence here (which ADR, how it departs, why); the Architect does **not** author an
+  ADR delta (that stays the Driller's job).
+- **Graceful degradation (absent architecture).** In a legacy repo that never ran
+  `/sdd-plan` (or `/sdd-new`'s altitude-3 flow), `specs/architecture.md` is **absent** — a
+  bare or template-stub file counts as absent too. Then the section is **not required**:
+  the Architect records the absence and proceeds, writing no fabricated citation. Specs
+  written before this contract (without the section) remain valid — no retro-fit.
+
 ## Frontmatter (machine-readable state)
 
 Every `.spec.md` starts with YAML frontmatter so the Orchestrator reads state
@@ -79,8 +103,8 @@ cheaply (and so the `obsidian` store gets graph/backlink support for free):
 ```yaml
 ---
 id: E01-F01
-title: Overview widgets
-epic: E01-dashboard
+title: Example feature
+epic: E01-example
 status: pending          # pending → spec-ready → in-progress → in-review → done
 sdd: true                # false = skip full SDD (quick task, Builder direct)
 autonomous: false        # true = may bypass the human approval gate
