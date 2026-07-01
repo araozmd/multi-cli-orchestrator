@@ -6,7 +6,7 @@ The model is the engine (or the horse); the harness is the chassis (or the reins
 
 **The core bet:** *models change every few months; your harness does not.* Build on
 files you own and you can swap the brain — Claude today, Gemini or a local model
-tomorrow — and swap the CLI — Claude Code, Codex, Gemini CLI, OpenCode — without
+tomorrow — and swap the CLI — Claude Code, Codex, Gemini CLI, OpenCode, Antigravity — without
 rewriting your system. That portability is the whole point of using `AGENTS.md` and
 plain files instead of a vendor wrapper.
 
@@ -32,8 +32,8 @@ plain files instead of a vendor wrapper.
    context and resume from files.
 
 4. **Separate roles.** One agent that plans + codes + reviews saturates its context
-   and reasons worse. A team — Orchestrator, Architect, Builder, Reviewer, Scout —
-   each with a clean context, beats it.
+   and reasons worse. A team — Inception (intake), Orchestrator, Architect, Builder,
+   Reviewer, Scout — each with a clean context, beats it.
 
 5. **Verify autonomously.** Never trust "done." The harness proves it: `init.sh`,
    tests, type/lint checks, and behavioral checks (e.g. Playwright clicking the live

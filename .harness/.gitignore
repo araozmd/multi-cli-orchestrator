@@ -1,0 +1,2 @@
+# Local-only telemetry log (see .harness/agents/orchestrator.md "## Telemetry").
+telemetry.jsonl

@@ -35,10 +35,10 @@ The result: token pressure on Claude drops, PRs get a second pair of eyes for fr
 npx skills add araozmd/multi-cli-orchestrator
 ```
 
-Targets a specific subset of CLIs (recommended for this kit — only Claude and OpenCode benefit from the subagents):
+Targets the four code agents this kit ships native subagent definitions for:
 
 ```bash
-npx skills add araozmd/multi-cli-orchestrator -a claude-code -a opencode -g
+npx skills add araozmd/multi-cli-orchestrator -g -s '*' -a claude-code opencode codex antigravity
 ```
 
 Flags worth knowing:
@@ -54,7 +54,7 @@ npx skills update
 
 ### Register the bundled subagents
 
-The `npx skills` CLI installs each skill folder as-is, but it does **not** relocate the bundled subagents (`pr-fixer`, `routing-judge`) into the per-CLI agents directory where Claude Code (`~/.claude/agents/`) and OpenCode (`~/.config/opencode/agents/`) actually look. Run the bootstrap once to symlink them:
+The `npx skills` CLI installs each skill folder as-is, but it does **not** relocate the bundled subagents (`pr-fixer`, `routing-judge`) into the per-CLI agents directory where each tool actually looks. Run the bootstrap once to symlink them:
 
 ```bash
 # After `npx skills add ... -g`
@@ -68,11 +68,12 @@ The bootstrap script ships inside the `start-feature` skill (under `skills/start
 
 What the script does:
 
-- Walks every `<skills-dir>/*/agents/{claude-code,opencode}/*.md` it finds (Claude Code skills under `.claude/skills/`, OpenCode skills under `.agents/skills/` or `~/.config/opencode/skills/`).
-- Symlinks each one into the matching CLI's agents directory under a namespaced filename (`<skill>-<agent>.md`, e.g. `pr-loop-pr-fixer.md`) so multiple skills can ship a `pr-fixer` without collision.
+- Walks every supported `<skills-dir>/*/agents/<cli>/<agent>.<ext>` it finds. It scans the universal `~/.agents/skills` store plus CLI-specific skill directories.
+- Symlinks each one into the matching CLI's agents directory under a namespaced filename (`<skill>-<agent>.<ext>`, e.g. `pr-loop-pr-fixer.md` or `pr-loop-pr-fixer.toml`) so multiple skills can ship a `pr-fixer` without collision.
+- Uses native formats and destinations: Claude Code Markdown in `~/.claude/agents`, OpenCode Markdown in `~/.config/opencode/agents`, Codex TOML in `~/.codex/agents`, and Antigravity Markdown in `~/.gemini/config/agents`.
 - Idempotent — re-run after every `npx skills update` that adds new subagents. Use `--unlink` to remove them, `--dry-run` to preview.
 
-If you only have one CLI installed, the script silently skips the other.
+If you only have one CLI installed, the script silently skips missing source directories for the others.
 
 ## Configuration
 
@@ -131,18 +132,18 @@ Make sure your project's `main` has branch protection enabled with required stat
 | [`route-task`](skills/route-task/SKILL.md) | Implementation task needs a worker | Pick Claude / OpenCode / Gemini / Smart Worker by task type and session budget |
 | [`pr-loop`](skills/pr-loop/SKILL.md) | PR is open and ready for review | Run the Codex review cycle, fix on rounds 1–2, escalate on round 3, stop on round 4, auto-merge when green |
 
-### The subagents (Claude Code / OpenCode only)
+### The subagents
 
 | Subagent | Lives in | Job |
 |---|---|---|
-| [`routing-judge`](skills/route-task/agents/) | `route-task` | Pure routing decision in an isolated context. Two versions: [Claude Code](skills/route-task/agents/claude-code/routing-judge.md), [OpenCode](skills/route-task/agents/opencode/routing-judge.md) |
-| [`pr-fixer`](skills/pr-loop/agents/) | `pr-loop` | Fix a single Codex comment per invocation. Two versions: [Claude Code](skills/pr-loop/agents/claude-code/pr-fixer.md), [OpenCode](skills/pr-loop/agents/opencode/pr-fixer.md) |
+| [`routing-judge`](skills/route-task/agents/) | `route-task` | Pure routing decision in an isolated context. Variants: [Claude Code](skills/route-task/agents/claude-code/routing-judge.md), [OpenCode](skills/route-task/agents/opencode/routing-judge.md), [Codex](skills/route-task/agents/codex/routing-judge.toml), [Antigravity](skills/route-task/agents/antigravity/routing-judge.md) |
+| [`pr-fixer`](skills/pr-loop/agents/) | `pr-loop` | Fix a single Codex comment per invocation. Variants: [Claude Code](skills/pr-loop/agents/claude-code/pr-fixer.md), [OpenCode](skills/pr-loop/agents/opencode/pr-fixer.md), [Codex](skills/pr-loop/agents/codex/pr-fixer.toml), [Antigravity](skills/pr-loop/agents/antigravity/pr-fixer.md) |
 
-The two CLIs need different frontmatter (Claude Code uses `name:` as the agent identifier; OpenCode uses the filename and requires `mode: subagent`), so each subagent ships in two formats. The bootstrap script picks the right one per CLI.
+Each CLI needs its native shape: Claude Code uses Markdown with `name:`, OpenCode uses Markdown with `mode: subagent`, Codex uses standalone TOML custom agents, and Antigravity uses Markdown agent personas. The bootstrap script picks the right one per CLI.
 
 ### Worker invocation seam
 
-All worker calls go through [`skills/start-feature/scripts/invoke-worker.sh`](skills/start-feature/scripts/invoke-worker.sh). Today it shells out to `claude` / `opencode` / `gemini` with the right headless-approval flags. Future: drop-in for an A2A client wrapper. Keep the signature stable. After `npx skills update` it lives at `~/.agents/skills/start-feature/scripts/invoke-worker.sh`; the orchestrator skills resolve it via `${MCO_SKILL_ROOT:-$HOME/.agents/skills/start-feature}/scripts/invoke-worker.sh`.
+All worker calls go through [`skills/start-feature/scripts/invoke-worker.sh`](skills/start-feature/scripts/invoke-worker.sh). Today it shells out to `claude` / `codex` / `opencode` / `gemini` / `agy` with the right headless-approval flags. Future: drop-in for an A2A client wrapper. Keep the signature stable. After `npx skills update` it lives at `~/.agents/skills/start-feature/scripts/invoke-worker.sh`; the orchestrator skills resolve it via `${MCO_SKILL_ROOT:-$HOME/.agents/skills/start-feature}/scripts/invoke-worker.sh`.
 
 ## Optional: drive it from the SDD harness
 
