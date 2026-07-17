@@ -119,11 +119,14 @@ evaluate() {
     "$ROUND_DIR/review-comments.json" 2>/dev/null || echo 0)
   if [[ "${findings:-0}" -gt 0 ]]; then echo findings; return; fi
 
-  # Condition 2: review summary banner naming the head commit, with zero findings.
+  # Condition 2: FRESH review summary banner naming the head commit, with zero findings.
+  # submittedAt >= trigger excludes a banner from a PRIOR review of the same head (e.g. a
+  # re-request without a new commit), which would otherwise flag the new round clean early.
   local banner
-  banner=$(jq --arg bot "$CODEX_BOT" --arg sh "$head_short" '
+  banner=$(jq --arg bot "$CODEX_BOT" --arg sh "$head_short" --arg since "$TRIGGER_TS" '
     [ .reviews[]? | select((.author.login // "") | startswith($bot))
-                 | select((.body // "") | contains("Reviewed commit") and contains($sh)) ]
+                 | select((.body // "") | contains("Reviewed commit") and contains($sh))
+                 | select($since == "" or ((.submittedAt // "") >= $since)) ]
     | length' "$ROUND_DIR/pr.json" 2>/dev/null || echo 0)
   if [[ "${banner:-0}" -gt 0 ]]; then echo clean; return; fi
 
@@ -132,10 +135,13 @@ evaluate() {
   # <head>") posts to the issue-comment stream, which conditions 1/2 never scan — so a
   # genuinely clean PR would stall until the ceiling. Scan the PAGINATED issue-comments
   # file (REST → .user.login) so a banner past the first 100 comments is still caught.
+  # Same created_at >= trigger freshness guard as condition 1 — a stale banner from a
+  # prior review of this head must not flag the new round clean before Codex responds.
   local banner_issue
-  banner_issue=$(jq --arg bot "$CODEX_BOT" --arg sh "$head_short" '
+  banner_issue=$(jq --arg bot "$CODEX_BOT" --arg sh "$head_short" --arg since "$TRIGGER_TS" '
     [ .[]? | select((.user.login // "") | startswith($bot))
-           | select((.body // "") | contains("Reviewed commit") and contains($sh)) ]
+           | select((.body // "") | contains("Reviewed commit") and contains($sh))
+           | select($since == "" or ((.created_at // "") >= $since)) ]
     | length' "$ROUND_DIR/issue-comments.json" 2>/dev/null || echo 0)
   if [[ "${banner_issue:-0}" -gt 0 ]]; then echo clean; return; fi
 
