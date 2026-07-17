@@ -21,8 +21,9 @@
 #   MCO_POLL_CEILING    max seconds to wait before timeout (default 900 = 15 min)
 #
 # Exit codes (the caller branches on these):
-#   0  → a Codex review with findings landed on head. Classify review-comments.json.
-#   3  → clean review, zero findings (summary banner on head OR 👍 reaction).
+#   0  → a Codex review with FRESH findings landed on head (created_at >= trigger).
+#   3  → clean review, zero findings (summary banner on head as a review OR as an
+#         issue comment, OR 👍 reaction on the trigger comment).
 #   2  → timeout: ceiling hit with no resolution. Caller aborts round w/ needs-human.
 #   4  → usage / precondition error.
 #
@@ -48,6 +49,17 @@ mkdir -p "$ROUND_DIR"
 
 read -r owner repo < <(gh repo view --json owner,name --jq '"\(.owner.login) \(.name)"')
 
+# Freshness anchor: only inline comments created at/after the trigger count as this
+# round's findings. GitHub re-stamps old unresolved threads' commit_id to each new
+# head, so without this filter re-anchored stale threads masquerade as fresh findings
+# and the clean path is never reached. Resolved once at startup (the trigger comment
+# is immutable). Empty when no trigger id is passed → the filter is a no-op.
+TRIGGER_TS=""
+if [[ -n "$TRIGGER_COMMENT_ID" ]]; then
+  TRIGGER_TS=$(gh api "repos/$owner/$repo/issues/comments/$TRIGGER_COMMENT_ID" \
+    --jq '.created_at' 2>/dev/null || echo "")
+fi
+
 # Fetch all three sources into the round dir for this poll.
 fetch_sources() {
   gh pr view "$PR_NUMBER" --json reviews,comments,statusCheckRollup,headRefOid \
@@ -63,7 +75,7 @@ fetch_sources() {
   fi
 }
 
-# Evaluate the three SKILL freshness conditions against the fetched sources.
+# Evaluate the SKILL freshness conditions against the fetched sources.
 # Echoes one of: findings | clean | pending. (The caller maps to an exit code.)
 evaluate() {
   local head
@@ -71,11 +83,15 @@ evaluate() {
   [[ -z "$head" ]] && { echo pending; return; }
   local head_short="${head:0:7}"
 
-  # Condition 1: inline findings filed by the Codex bot against the head commit.
+  # Condition 1: FRESH inline findings filed by the Codex bot against the head commit.
+  # The created_at >= trigger filter excludes stale threads that GitHub re-anchored to
+  # head (their commit_id matches but they predate this round's trigger). No-op when
+  # TRIGGER_TS is empty. ISO-8601 timestamps compare correctly as lexical strings.
   local findings
-  findings=$(jq --arg bot "$CODEX_BOT" --arg head "$head" '
+  findings=$(jq --arg bot "$CODEX_BOT" --arg head "$head" --arg since "$TRIGGER_TS" '
     [ .[] | select((.user.login // "") | startswith($bot))
-          | select((.commit_id // "") == $head) ] | length' \
+          | select((.commit_id // "") == $head)
+          | select($since == "" or ((.created_at // "") >= $since)) ] | length' \
     "$ROUND_DIR/review-comments.json" 2>/dev/null || echo 0)
   if [[ "${findings:-0}" -gt 0 ]]; then echo findings; return; fi
 
@@ -86,6 +102,17 @@ evaluate() {
                  | select((.body // "") | contains("Reviewed commit") and contains($sh)) ]
     | length' "$ROUND_DIR/pr.json" 2>/dev/null || echo 0)
   if [[ "${banner:-0}" -gt 0 ]]; then echo clean; return; fi
+
+  # Condition 2b: the zero-findings banner delivered as an ISSUE comment, not a review.
+  # Codex's clean result ("Didn't find any major issues. Breezy!" + "Reviewed commit:
+  # <head>") posts to .comments[], which conditions 1/2 never scan — so a genuinely
+  # clean PR would stall until the ceiling. Scan issue comments for the head banner too.
+  local banner_issue
+  banner_issue=$(jq --arg bot "$CODEX_BOT" --arg sh "$head_short" '
+    [ .comments[]? | select((.author.login // "") | startswith($bot))
+                  | select((.body // "") | contains("Reviewed commit") and contains($sh)) ]
+    | length' "$ROUND_DIR/pr.json" 2>/dev/null || echo 0)
+  if [[ "${banner_issue:-0}" -gt 0 ]]; then echo clean; return; fi
 
   # Condition 3: Codex bot reacted 👍 (+1) on the triggering comment.
   local thumbs

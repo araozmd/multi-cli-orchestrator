@@ -61,11 +61,15 @@ When the watcher exits, the harness re-invokes you. **Branch on its exit code** 
 | Exit | Meaning | Next |
 |---|---|---|
 | `0` | Review **with findings** landed on the head commit | Go to step 3, classify `review-comments.json` |
-| `3` | **Clean review, 0 findings** (summary banner names head, or 👍 reaction) | Skip classify; treat round as zero blocking |
+| `3` | **Clean review, 0 findings** (head banner as a review **or** issue comment, or 👍 reaction) | Skip classify; treat round as zero blocking |
 | `2` | **Timeout** — ceiling hit, no resolution | Abort round with `needs-human`. Do **not** treat a timeout as "clean." |
 | `4` | Usage / precondition error | Fix args and relaunch |
 
-The exit codes encode the same freshness conditions the watcher checks: (1) Codex-bot inline comments filed against `headRefOid` → findings; (2) summary banner containing `Reviewed commit: <short headRefOid>` with zero head findings → clean; (3) Codex-bot 👍 (`+1`) on the trigger comment → clean.
+The exit codes encode the same freshness conditions the watcher checks: (1) Codex-bot inline comments filed against `headRefOid` **and created at/after the trigger comment** → findings; (2) summary banner containing `Reviewed commit: <short headRefOid>` with zero head findings → clean; (2b) that same head banner delivered as an **issue comment** rather than a review → clean; (3) Codex-bot 👍 (`+1`) on the trigger comment → clean.
+
+**Two freshness pitfalls the watcher guards against** (both previously stalled clean PRs):
+- **Re-anchored stale threads.** GitHub re-stamps old unresolved threads' `commit_id` to each new head, so a stale thread's `commit_id` matches `headRefOid` even though it predates this round. Condition 1 counts an inline comment only when `created_at >= trigger.created_at`, so re-anchored old threads no longer masquerade as fresh findings.
+- **Clean banner as an issue comment.** Codex's zero-findings result (“Didn't find any major issues. Breezy!” + `Reviewed commit: <head>`) posts to `.comments[]`, which conditions 1/2 never scan. Condition 2b scans issue comments for the head banner so a genuinely clean PR resolves instead of waiting out the ceiling.
 
 **Codex bot identity.** The watcher matches author login `chatgpt-codex-connector` with an **optional `[bot]` suffix** via prefix match — `gh pr view` (GraphQL) reports `chatgpt-codex-connector`; the REST API reports `chatgpt-codex-connector[bot]`. Treat both as the bot; never use an exact literal.
 
@@ -172,17 +176,52 @@ Handover summary:
 - Cache: .mco-cache/<pr>/
 ```
 
-Then auto-merge:
+**Resolve all review threads first.** The repo ruleset requires **every** review thread resolved before merge — an unresolved P2/nit that never gated a fix still blocks the merge button. Resolve all currently-unresolved threads via the GraphQL `resolveReviewThread` mutation (there is no REST/`gh pr` equivalent):
+
+```bash
+read -r owner repo < <(gh repo view --json owner,name --jq '"\(.owner.login) \(.name)"')
+
+# Collect every unresolved review-thread node id (paginated).
+thread_ids=$(gh api graphql -f query='
+  query($owner:String!,$repo:String!,$pr:Int!,$cursor:String){
+    repository(owner:$owner,name:$repo){
+      pullRequest(number:$pr){
+        reviewThreads(first:100,after:$cursor){
+          nodes{ id isResolved }
+          pageInfo{ hasNextPage endCursor }
+        }}}}' \
+  -f owner="$owner" -f repo="$repo" -F pr="$pr_number" --paginate \
+  --jq '.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved | not) | .id')
+
+for tid in $thread_ids; do
+  gh api graphql -f query='
+    mutation($id:ID!){ resolveReviewThread(input:{threadId:$id}){ thread{ id isResolved } } }' \
+    -f id="$tid" >/dev/null
+done
+```
+
+Then auto-merge, deleting the remote branch in the same call:
 
 ```bash
 if [[ "${MCO_MERGE_STRATEGY:-merge}" == "squash" ]]; then
-  gh pr merge "$pr_number" --squash --body-file ".mco-cache/$pr_number/squash-message.txt"
+  gh pr merge "$pr_number" --squash --delete-branch --body-file ".mco-cache/$pr_number/squash-message.txt"
 else
-  gh pr merge "$pr_number" --merge
+  gh pr merge "$pr_number" --merge --delete-branch
 fi
 ```
 
-If `gh pr merge` fails (e.g. branch protection race, required review not yet registered), retry once after 30s. If it still fails, fall back to labeling `needs-human` and posting the error.
+`--delete-branch` removes the remote branch and the local tracking branch. If the local branch lingers (e.g. it was never checked out here, or is the current branch), clean it up explicitly:
+
+```bash
+default_branch=$(gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name')
+branch=$(gh pr view "$pr_number" --json headRefName --jq '.headRefName')
+git checkout "$default_branch" >/dev/null 2>&1 || true
+git pull --ff-only >/dev/null 2>&1 || true
+git branch -D "$branch" 2>/dev/null || true          # local
+git remote prune origin >/dev/null 2>&1 || true      # drop stale remote-tracking ref
+```
+
+If `gh pr merge` fails (e.g. branch protection race, required review not yet registered, a thread re-opened), retry once after 30s. If it still fails, fall back to labeling `needs-human` and posting the error.
 
 Return success to the caller (`start-feature`). The caller is responsible for clearing `.mco-cache/_lock`.
 
