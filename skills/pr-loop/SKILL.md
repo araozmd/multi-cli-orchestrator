@@ -193,10 +193,11 @@ Handover summary:
 
 ```bash
 read -r owner repo < <(gh repo view --json owner,name --jq '"\(.owner.login) \(.name)"')
-codex_bot="chatgpt-codex-connector"   # prefix-match; REST/GraphQL may add a [bot] suffix
 
-# Unresolved threads as "<id> <author1> <author2> ..." — EVERY comment's author, not
-# just the first. A human reply on a Codex-opened thread must count as a human thread.
+# Per unresolved thread emit "<allcodex> <id>", where <allcodex> is true only when EVERY
+# participant is the Codex bot (a human reply on a Codex-opened thread makes it false).
+# The all-participants test is done in jq — no shell word-splitting (zsh-safe). The bot
+# login is inlined here because `gh api --jq` takes no --arg.
 unresolved=$(gh api graphql -f query='
   query($owner:String!,$repo:String!,$pr:Int!,$endCursor:String){
     repository(owner:$owner,name:$repo){
@@ -208,26 +209,20 @@ unresolved=$(gh api graphql -f query='
   -f owner="$owner" -f repo="$repo" -F pr="$pr_number" --paginate \
   --jq '.data.repository.pullRequest.reviewThreads.nodes[]
         | select(.isResolved | not)
-        | "\(.id) " + ([.comments.nodes[].author.login // ""] | join(" "))')
+        | "\(([.comments.nodes[].author.login // ""] | all(startswith("chatgpt-codex-connector")))) \(.id)"')
 
-# A thread is safe to auto-resolve only if ALL its participants are the Codex bot.
-# Any thread with a non-Codex participant → merge_ok=0 → needs-human, resolve nothing.
-merge_ok=1
-safe_ids=()
-while read -r tid rest; do
-  [[ -z "$tid" ]] && continue
-  for a in $rest; do
-    [[ "$a" == ${codex_bot}* ]] || { merge_ok=0; break; }
-  done
-  safe_ids+=("$tid")
-done <<< "$unresolved"
-
-if [[ "$merge_ok" == "1" ]]; then
-  for tid in "${safe_ids[@]}"; do
+# Any unresolved thread with a non-Codex participant → needs-human, resolve nothing.
+if printf '%s\n' "$unresolved" | grep -q '^false '; then
+  merge_ok=0                                                 # → needs-human terminal state
+else
+  merge_ok=1
+  # All remaining unresolved threads are Codex-owned — safe to auto-resolve.
+  while read -r _allcodex tid; do
+    [[ -z "$tid" ]] && continue
     gh api graphql -f query='
       mutation($id:ID!){ resolveReviewThread(input:{threadId:$id}){ thread{ id isResolved } } }' \
       -f id="$tid" >/dev/null
-  done
+  done <<< "$unresolved"
 fi
 ```
 
