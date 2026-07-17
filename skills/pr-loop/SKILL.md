@@ -29,12 +29,14 @@ read -r owner repo < <(gh repo view --json owner,name --jq '"\(.owner.login) \(.
 - **Round 1:** mark the PR ready for review (`gh pr ready <pr>`), then comment `@codex review`.
 - **Round 2+:** comment `@codex review` again to request a re-review of the new commits.
 
-**Capture the triggering comment's id** so step 2 can poll its reactions for the 👍-only (clean) case:
+**Capture the triggering comment's id straight from the post response** — step 2 uses it both to poll reactions (👍-only clean case) and as the **freshness anchor** (`trigger-ts.txt`, the `created_at >= trigger` filter). Derive it from the URL `gh pr comment` prints, not from a separate list call: a non-paginated `GET issues/<n>/comments` returns only the first 30 (oldest) comments, so on a busy PR the just-posted `@codex review` is on a later page and the lookup returns a stale id or `null` — which would silently disable the freshness filter.
 
 ```bash
-trigger_comment_id=$(gh api "repos/$owner/$repo/issues/$pr_number/comments" \
-  --jq 'map(select(.body | contains("@codex review"))) | last | .id')
+trigger_url=$(gh pr comment "$pr_number" --body "@codex review")   # this IS the round's trigger post
+trigger_comment_id="${trigger_url##*issuecomment-}"                # .../pull/N#issuecomment-<id>
 ```
+
+(So steps "comment `@codex review`" above and this capture are a single action — don't post twice.)
 
 If `MCO_DRY_RUN=1`, skip the actual `gh pr comment` and synthesize stub review data for downstream testing.
 
