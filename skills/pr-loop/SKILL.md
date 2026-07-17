@@ -195,53 +195,63 @@ Handover summary:
 read -r owner repo < <(gh repo view --json owner,name --jq '"\(.owner.login) \(.name)"')
 codex_bot="chatgpt-codex-connector"   # prefix-match; REST/GraphQL may add a [bot] suffix
 
-# Unresolved threads as "<id> <first-comment-author-login>" (paginated).
+# Unresolved threads as "<id> <author1> <author2> ..." — EVERY comment's author, not
+# just the first. A human reply on a Codex-opened thread must count as a human thread.
 unresolved=$(gh api graphql -f query='
   query($owner:String!,$repo:String!,$pr:Int!,$endCursor:String){
     repository(owner:$owner,name:$repo){
       pullRequest(number:$pr){
         reviewThreads(first:100,after:$endCursor){
-          nodes{ id isResolved comments(first:1){ nodes{ author{ login } } } }
+          nodes{ id isResolved comments(first:100){ nodes{ author{ login } } } }
           pageInfo{ hasNextPage endCursor }
         }}}}' \
   -f owner="$owner" -f repo="$repo" -F pr="$pr_number" --paginate \
   --jq '.data.repository.pullRequest.reviewThreads.nodes[]
         | select(.isResolved | not)
-        | "\(.id) \(.comments.nodes[0].author.login // "")"')
+        | "\(.id) " + ([.comments.nodes[].author.login // ""] | join(" "))')
 
-# Any unresolved thread NOT opened by Codex → hand to a human, do NOT merge.
-non_codex=$(printf '%s\n' "$unresolved" | grep -v " ${codex_bot}" | grep -v '^$' || true)
-if [[ -n "$non_codex" ]]; then
-  merge_ok=0                                                 # → needs-human terminal state
-else
-  merge_ok=1
-  while read -r tid _author; do
-    [[ -z "$tid" ]] && continue
+# A thread is safe to auto-resolve only if ALL its participants are the Codex bot.
+# Any thread with a non-Codex participant → merge_ok=0 → needs-human, resolve nothing.
+merge_ok=1
+safe_ids=()
+while read -r tid rest; do
+  [[ -z "$tid" ]] && continue
+  for a in $rest; do
+    [[ "$a" == ${codex_bot}* ]] || { merge_ok=0; break; }
+  done
+  safe_ids+=("$tid")
+done <<< "$unresolved"
+
+if [[ "$merge_ok" == "1" ]]; then
+  for tid in "${safe_ids[@]}"; do
     gh api graphql -f query='
       mutation($id:ID!){ resolveReviewThread(input:{threadId:$id}){ thread{ id isResolved } } }' \
       -f id="$tid" >/dev/null
-  done <<< "$unresolved"
+  done
 fi
 ```
 
 **If `merge_ok=0`, stop here** — go straight to the [needs-human terminal state](#needs-human-failure) and run **none** of the merge commands below. Only proceed when `merge_ok=1`.
 
-Then auto-merge (guarded), deleting the remote branch in the same call:
+Then auto-merge (guarded), deleting the remote branch in the same call. Track whether the
+merge command actually **succeeded** (`merged`) — separate from `merge_ok`, which only
+recorded thread eligibility — so cleanup below never runs on a failed/pending merge:
 
 ```bash
+merged=0
 if [[ "${merge_ok:-0}" != "1" ]]; then
   echo "unresolved non-Codex threads remain — needs-human, not merging" >&2   # do not merge
 elif [[ "${MCO_MERGE_STRATEGY:-merge}" == "squash" ]]; then
-  gh pr merge "$pr_number" --squash --delete-branch --body-file ".mco-cache/$pr_number/squash-message.txt"
+  gh pr merge "$pr_number" --squash --delete-branch --body-file ".mco-cache/$pr_number/squash-message.txt" && merged=1
 else
-  gh pr merge "$pr_number" --merge --delete-branch
+  gh pr merge "$pr_number" --merge --delete-branch && merged=1
 fi
 ```
 
-`--delete-branch` removes the remote branch and the local tracking branch. Clean up any lingering local branch **only if the merge happened** (`merge_ok=1`):
+`--delete-branch` removes the remote branch and the local tracking branch. Clean up any lingering local branch **only if the merge actually succeeded** (`merged=1`):
 
 ```bash
-if [[ "${merge_ok:-0}" == "1" ]]; then
+if [[ "${merged:-0}" == "1" ]]; then
   default_branch=$(gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name')
   branch=$(gh pr view "$pr_number" --json headRefName --jq '.headRefName')
   git checkout "$default_branch" >/dev/null 2>&1 || true
