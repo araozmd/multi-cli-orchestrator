@@ -209,11 +209,12 @@ unresolved=$(gh api graphql -f query='
         | select(.isResolved | not)
         | "\(.id) \(.comments.nodes[0].author.login // "")"')
 
-# Any unresolved thread NOT opened by Codex → hand to a human, do not merge.
+# Any unresolved thread NOT opened by Codex → hand to a human, do NOT merge.
 non_codex=$(printf '%s\n' "$unresolved" | grep -v " ${codex_bot}" | grep -v '^$' || true)
 if [[ -n "$non_codex" ]]; then
-  echo "unresolved non-Codex threads remain — needs-human"   # → needs-human terminal state
+  merge_ok=0                                                 # → needs-human terminal state
 else
+  merge_ok=1
   while read -r tid _author; do
     [[ -z "$tid" ]] && continue
     gh api graphql -f query='
@@ -223,25 +224,31 @@ else
 fi
 ```
 
-Then auto-merge, deleting the remote branch in the same call:
+**If `merge_ok=0`, stop here** — go straight to the [needs-human terminal state](#needs-human-failure) and run **none** of the merge commands below. Only proceed when `merge_ok=1`.
+
+Then auto-merge (guarded), deleting the remote branch in the same call:
 
 ```bash
-if [[ "${MCO_MERGE_STRATEGY:-merge}" == "squash" ]]; then
+if [[ "${merge_ok:-0}" != "1" ]]; then
+  echo "unresolved non-Codex threads remain — needs-human, not merging" >&2   # do not merge
+elif [[ "${MCO_MERGE_STRATEGY:-merge}" == "squash" ]]; then
   gh pr merge "$pr_number" --squash --delete-branch --body-file ".mco-cache/$pr_number/squash-message.txt"
 else
   gh pr merge "$pr_number" --merge --delete-branch
 fi
 ```
 
-`--delete-branch` removes the remote branch and the local tracking branch. If the local branch lingers (e.g. it was never checked out here, or is the current branch), clean it up explicitly:
+`--delete-branch` removes the remote branch and the local tracking branch. Clean up any lingering local branch **only if the merge happened** (`merge_ok=1`):
 
 ```bash
-default_branch=$(gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name')
-branch=$(gh pr view "$pr_number" --json headRefName --jq '.headRefName')
-git checkout "$default_branch" >/dev/null 2>&1 || true
-git pull --ff-only >/dev/null 2>&1 || true
-git branch -D "$branch" 2>/dev/null || true          # local
-git remote prune origin >/dev/null 2>&1 || true      # drop stale remote-tracking ref
+if [[ "${merge_ok:-0}" == "1" ]]; then
+  default_branch=$(gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name')
+  branch=$(gh pr view "$pr_number" --json headRefName --jq '.headRefName')
+  git checkout "$default_branch" >/dev/null 2>&1 || true
+  git pull --ff-only >/dev/null 2>&1 || true
+  git branch -D "$branch" 2>/dev/null || true          # local
+  git remote prune origin >/dev/null 2>&1 || true      # drop stale remote-tracking ref
+fi
 ```
 
 If `gh pr merge` fails (e.g. branch protection race, required review not yet registered, a thread re-opened), retry once after 30s. If it still fails, fall back to labeling `needs-human` and posting the error.
