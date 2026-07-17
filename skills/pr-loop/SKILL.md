@@ -189,28 +189,38 @@ Handover summary:
 - Cache: .mco-cache/<pr>/
 ```
 
-**Resolve all review threads first.** The repo ruleset requires **every** review thread resolved before merge — an unresolved P2/nit that never gated a fix still blocks the merge button. Resolve all currently-unresolved threads via the GraphQL `resolveReviewThread` mutation (there is no REST/`gh pr` equivalent):
+**Resolve Codex threads first — never human ones.** The repo ruleset requires every review thread resolved before merge, but the loop may only auto-resolve threads **it owns** (opened by the Codex bot). Auto-resolving a human reviewer's unresolved conversation would silently bypass the merge gate that keeps human feedback meaningful. So: fetch each unresolved thread with its first-comment author; if **any** non-Codex thread is unresolved, **stop and go to the needs-human terminal state** (do not merge). Only when every remaining unresolved thread is Codex-owned do we resolve them (via the GraphQL `resolveReviewThread` mutation — there is no REST/`gh pr` equivalent) and proceed.
 
 ```bash
 read -r owner repo < <(gh repo view --json owner,name --jq '"\(.owner.login) \(.name)"')
+codex_bot="chatgpt-codex-connector"   # prefix-match; REST/GraphQL may add a [bot] suffix
 
-# Collect every unresolved review-thread node id (paginated).
-thread_ids=$(gh api graphql -f query='
+# Unresolved threads as "<id> <first-comment-author-login>" (paginated).
+unresolved=$(gh api graphql -f query='
   query($owner:String!,$repo:String!,$pr:Int!,$endCursor:String){
     repository(owner:$owner,name:$repo){
       pullRequest(number:$pr){
         reviewThreads(first:100,after:$endCursor){
-          nodes{ id isResolved }
+          nodes{ id isResolved comments(first:1){ nodes{ author{ login } } } }
           pageInfo{ hasNextPage endCursor }
         }}}}' \
   -f owner="$owner" -f repo="$repo" -F pr="$pr_number" --paginate \
-  --jq '.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved | not) | .id')
+  --jq '.data.repository.pullRequest.reviewThreads.nodes[]
+        | select(.isResolved | not)
+        | "\(.id) \(.comments.nodes[0].author.login // "")"')
 
-for tid in $thread_ids; do
-  gh api graphql -f query='
-    mutation($id:ID!){ resolveReviewThread(input:{threadId:$id}){ thread{ id isResolved } } }' \
-    -f id="$tid" >/dev/null
-done
+# Any unresolved thread NOT opened by Codex → hand to a human, do not merge.
+non_codex=$(printf '%s\n' "$unresolved" | grep -v " ${codex_bot}" | grep -v '^$' || true)
+if [[ -n "$non_codex" ]]; then
+  echo "unresolved non-Codex threads remain — needs-human"   # → needs-human terminal state
+else
+  while read -r tid _author; do
+    [[ -z "$tid" ]] && continue
+    gh api graphql -f query='
+      mutation($id:ID!){ resolveReviewThread(input:{threadId:$id}){ thread{ id isResolved } } }' \
+      -f id="$tid" >/dev/null
+  done <<< "$unresolved"
+fi
 ```
 
 Then auto-merge, deleting the remote branch in the same call:
