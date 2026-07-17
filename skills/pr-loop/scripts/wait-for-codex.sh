@@ -56,8 +56,21 @@ read -r owner repo < <(gh repo view --json owner,name --jq '"\(.owner.login) \(.
 # is immutable). Empty when no trigger id is passed → the filter is a no-op.
 TRIGGER_TS=""
 if [[ -n "$TRIGGER_COMMENT_ID" ]]; then
-  TRIGGER_TS=$(gh api "repos/$owner/$repo/issues/comments/$TRIGGER_COMMENT_ID" \
-    --jq '.created_at' 2>/dev/null || echo "")
+  # An id was provided → we MUST resolve its timestamp. An empty TS here would silently
+  # disable the freshness filter for the whole wait and recreate the stale re-anchored-
+  # thread bug this guard prevents. So retry a few times, then abort with a usage error
+  # rather than proceeding blind. (Empty TS is reserved for the no-id compat path below.)
+  for _attempt in 1 2 3; do
+    TRIGGER_TS=$(gh api "repos/$owner/$repo/issues/comments/$TRIGGER_COMMENT_ID" \
+      --jq '.created_at' 2>/dev/null || echo "")
+    [[ -n "$TRIGGER_TS" ]] && break
+    sleep 2
+  done
+  if [[ -z "$TRIGGER_TS" ]]; then
+    echo "wait-for-codex: could not resolve trigger comment $TRIGGER_COMMENT_ID timestamp" \
+         "— aborting so the freshness filter is not silently disabled" >&2
+    exit 4
+  fi
 fi
 # Persist the anchor so the SKILL's classification step (step 3) can apply the SAME
 # freshness filter. The watcher only uses it for its exit decision; review-comments.json
