@@ -54,6 +54,7 @@ The watcher polls every `MCO_POLL_INTERVAL` seconds (default **60** — minute-b
 
 - `pr.json` — `gh pr view --json reviews,comments,statusCheckRollup,headRefOid` (summary, checks, head oid)
 - `review-comments.json` — `gh api repos/<o>/<r>/pulls/<n>/comments --paginate --slurp` flattened to one array — **the inline findings**, anchored to file/line. Returned by **neither** `--json comments` (issue comments only) **nor** `reviews[*].body` (summary banner only). `--slurp` is required so paginated REST results remain parseable when more than one page is returned.
+- `issue-comments.json` — `gh api repos/<o>/<r>/issues/<n>/comments --paginate --slurp` — the issue-comment stream, scanned by condition 2b for a clean banner. Fetched via paginated REST (not `gh pr view --json comments`, which caps at `first:100`) so a banner posted past the first 100 comments is still caught.
 - `reactions.json` — reactions on the `@codex review` comment (Codex reacts 👍 when it has nothing).
 
 When the watcher exits, the harness re-invokes you. **Branch on its exit code** — do not re-poll:

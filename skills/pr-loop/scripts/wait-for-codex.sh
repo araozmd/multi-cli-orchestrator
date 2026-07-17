@@ -27,8 +27,8 @@
 #   2  → timeout: ceiling hit with no resolution. Caller aborts round w/ needs-human.
 #   4  → usage / precondition error.
 #
-# Always (re)writes pr.json, review-comments.json, reactions.json into round-dir on
-# its final poll, so the caller reads the same three sources the SKILL describes.
+# Always (re)writes pr.json, review-comments.json, issue-comments.json, reactions.json
+# into round-dir on its final poll, so the caller reads the same sources the SKILL describes.
 
 set -euo pipefail
 
@@ -65,13 +65,19 @@ fi
 # would re-admit stale re-anchored threads into blocking.json — defeating the guard.
 printf '%s' "$TRIGGER_TS" > "$ROUND_DIR/trigger-ts.txt"
 
-# Fetch all three sources into the round dir for this poll.
+# Fetch the sources into the round dir for this poll.
 fetch_sources() {
   gh pr view "$PR_NUMBER" --json reviews,comments,statusCheckRollup,headRefOid \
     > "$ROUND_DIR/pr.json" 2>/dev/null || return 1
   gh api "repos/$owner/$repo/pulls/$PR_NUMBER/comments" --paginate --slurp 2>/dev/null \
     | jq 'add // []' > "$ROUND_DIR/review-comments.json" \
     || echo '[]' > "$ROUND_DIR/review-comments.json"
+  # Issue comments via the PAGINATED REST endpoint. gh pr view --json comments caps at
+  # first:100, so a clean banner (condition 2b) posted past page 1 would be missed and
+  # an otherwise-clean PR would time out. This file is what condition 2b scans.
+  gh api "repos/$owner/$repo/issues/$PR_NUMBER/comments" --paginate --slurp 2>/dev/null \
+    | jq 'add // []' > "$ROUND_DIR/issue-comments.json" \
+    || echo '[]' > "$ROUND_DIR/issue-comments.json"
   if [[ -n "$TRIGGER_COMMENT_ID" ]]; then
     gh api "repos/$owner/$repo/issues/comments/$TRIGGER_COMMENT_ID/reactions" \
       > "$ROUND_DIR/reactions.json" 2>/dev/null || echo '[]' > "$ROUND_DIR/reactions.json"
@@ -110,13 +116,14 @@ evaluate() {
 
   # Condition 2b: the zero-findings banner delivered as an ISSUE comment, not a review.
   # Codex's clean result ("Didn't find any major issues. Breezy!" + "Reviewed commit:
-  # <head>") posts to .comments[], which conditions 1/2 never scan — so a genuinely
-  # clean PR would stall until the ceiling. Scan issue comments for the head banner too.
+  # <head>") posts to the issue-comment stream, which conditions 1/2 never scan — so a
+  # genuinely clean PR would stall until the ceiling. Scan the PAGINATED issue-comments
+  # file (REST → .user.login) so a banner past the first 100 comments is still caught.
   local banner_issue
   banner_issue=$(jq --arg bot "$CODEX_BOT" --arg sh "$head_short" '
-    [ .comments[]? | select((.author.login // "") | startswith($bot))
-                  | select((.body // "") | contains("Reviewed commit") and contains($sh)) ]
-    | length' "$ROUND_DIR/pr.json" 2>/dev/null || echo 0)
+    [ .[]? | select((.user.login // "") | startswith($bot))
+           | select((.body // "") | contains("Reviewed commit") and contains($sh)) ]
+    | length' "$ROUND_DIR/issue-comments.json" 2>/dev/null || echo 0)
   if [[ "${banner_issue:-0}" -gt 0 ]]; then echo clean; return; fi
 
   # Condition 3: Codex bot reacted 👍 (+1) on the triggering comment.
