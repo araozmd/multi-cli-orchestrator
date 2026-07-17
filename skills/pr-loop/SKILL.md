@@ -77,7 +77,19 @@ The exit codes encode the same freshness conditions the watcher checks: (1) Code
 
 ### 3. Parse and classify comments
 
-Walk **`review-comments.json` (the inline findings)** + `reviews[*].body` + `comments` looking for severity tags. Codex tags severity as a **badge image**, not bare text — e.g. `![P2 Badge](https://img.shields.io/badge/P2-yellow?style=flat)`. Match `\b(P0|P1|P2|nit)\b` (case-insensitive) anywhere in the comment body — this catches both the badge alt-text/URL form and any bare-text form — first match wins. Default to `P2` if nothing matches. Only inline comments filed against the head commit count for this round.
+Walk **`review-comments.json` (the inline findings)** + `reviews[*].body` + `comments` looking for severity tags. Codex tags severity as a **badge image**, not bare text — e.g. `![P2 Badge](https://img.shields.io/badge/P2-yellow?style=flat)`. Match `\b(P0|P1|P2|nit)\b` (case-insensitive) anywhere in the comment body — this catches both the badge alt-text/URL form and any bare-text form — first match wins. Default to `P2` if nothing matches.
+
+**Only FRESH inline comments count for this round** — same freshness guard the watcher applies (see step 2). An inline comment counts only when it is filed against the head commit **and** its `created_at >= trigger.created_at`; otherwise a stale thread GitHub re-anchored to head slips back into `blocking.json` and defeats the guard. The watcher persists the anchor to `trigger-ts.txt`; apply it when reading the unfiltered `review-comments.json`:
+
+```bash
+since=$(cat "$round_dir/trigger-ts.txt" 2>/dev/null)
+head=$(jq -r '.headRefOid' "$round_dir/pr.json")
+jq --arg h "$head" --arg since "$since" '
+  [ .[] | select((.commit_id // "") == $h)
+        | select($since == "" or ((.created_at // "") >= $since)) ]' \
+  "$round_dir/review-comments.json" > "$round_dir/fresh-comments.json"
+# classify severities from fresh-comments.json (not the raw review-comments.json)
+```
 
 Filter to **blocking severities only** (`MCO_BLOCKING_SEVERITIES`, default `P0,P1`). Save:
 
@@ -183,10 +195,10 @@ read -r owner repo < <(gh repo view --json owner,name --jq '"\(.owner.login) \(.
 
 # Collect every unresolved review-thread node id (paginated).
 thread_ids=$(gh api graphql -f query='
-  query($owner:String!,$repo:String!,$pr:Int!,$cursor:String){
+  query($owner:String!,$repo:String!,$pr:Int!,$endCursor:String){
     repository(owner:$owner,name:$repo){
       pullRequest(number:$pr){
-        reviewThreads(first:100,after:$cursor){
+        reviewThreads(first:100,after:$endCursor){
           nodes{ id isResolved }
           pageInfo{ hasNextPage endCursor }
         }}}}' \

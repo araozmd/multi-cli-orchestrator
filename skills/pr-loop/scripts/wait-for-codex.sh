@@ -59,6 +59,11 @@ if [[ -n "$TRIGGER_COMMENT_ID" ]]; then
   TRIGGER_TS=$(gh api "repos/$owner/$repo/issues/comments/$TRIGGER_COMMENT_ID" \
     --jq '.created_at' 2>/dev/null || echo "")
 fi
+# Persist the anchor so the SKILL's classification step (step 3) can apply the SAME
+# freshness filter. The watcher only uses it for its exit decision; review-comments.json
+# is written unfiltered (it's the raw source of truth), so without this the classifier
+# would re-admit stale re-anchored threads into blocking.json — defeating the guard.
+printf '%s' "$TRIGGER_TS" > "$ROUND_DIR/trigger-ts.txt"
 
 # Fetch all three sources into the round dir for this poll.
 fetch_sources() {
